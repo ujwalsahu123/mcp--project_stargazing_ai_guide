@@ -10,7 +10,7 @@ MCP_SERVER_URL = "https://MCP-Project-Stargazing.fastmcp.app/mcp"
 
 # Get API key from environment variable or use placeholder
 # Get your API key from FastMCP dashboard: https://console.fastmcp.ai/
-API_KEY = os.getenv("STARGUIDE_API_KEY", "your-api-key-here")
+API_KEY = os.getenv("STARGUIDE_API_KEY", "fmcp_Vk2mtDwq2IaG1Oj7yNz-RrMpH_a47-A8btc5eHylpgA")
 
 # Test location: Mumbai, India
 TEST_LAT = 19.274
