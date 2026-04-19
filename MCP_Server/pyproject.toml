@@ -9,4 +9,5 @@ dependencies = [
     "skyfield>=1.53",
     "astropy>=6.1,<7.0",
     "astroquery>=0.4.10,<0.5",
+    "numpy>=1.26,<2.0",
 ]
