@@ -1,0 +1,4 @@
+fastmcp==3.2.4
+skyfield==1.54
+astropy==6.1.7
+astroquery==0.4.11

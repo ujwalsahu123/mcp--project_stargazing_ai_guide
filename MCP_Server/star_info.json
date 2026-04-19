@@ -1,0 +1,411 @@
+{
+  "Sun": {
+    "display_name": "Sun",
+    "type": "Star",
+    "distance": "0 AU",
+    "constellation": "N/A",
+    "description": "The star at the center of our solar system, providing light and energy to Earth.",
+    "mythology": "Worshipped as a powerful deity in many ancient cultures."
+  },
+  "Moon": {
+    "display_name": "Moon",
+    "type": "Natural Satellite",
+    "distance": "384,400 km",
+    "constellation": "Varies",
+    "description": "Earth’s only natural satellite, visible in phases.",
+    "mythology": "Associated with lunar gods and cycles of time."
+  },
+  "Mercury": {
+    "display_name": "Mercury",
+    "type": "Planet",
+    "distance": "0.39 AU",
+    "constellation": "Varies",
+    "description": "The smallest and fastest planet, closest to the Sun.",
+    "mythology": "Named after the Roman messenger god."
+  },
+  "Venus": {
+    "display_name": "Venus",
+    "type": "Planet",
+    "distance": "0.72 AU",
+    "constellation": "Varies",
+    "description": "The brightest planet, often seen as the Morning or Evening Star.",
+    "mythology": "Named after the Roman goddess of love and beauty."
+  },
+  "Mars": {
+    "display_name": "Mars",
+    "type": "Planet",
+    "distance": "1.52 AU",
+    "constellation": "Varies",
+    "description": "The red planet, known for its iron-rich dusty surface.",
+    "mythology": "Named after the Roman god of war."
+  },
+  "Jupiter": {
+    "display_name": "Jupiter",
+    "type": "Gas Giant",
+    "distance": "5.2 AU",
+    "constellation": "Varies",
+    "description": "The largest planet, famous for its Great Red Spot storm.",
+    "mythology": "King of the Roman gods."
+  },
+  "Saturn": {
+    "display_name": "Saturn",
+    "type": "Gas Giant",
+    "distance": "9.5 AU",
+    "constellation": "Varies",
+    "description": "Known for its beautiful ring system.",
+    "mythology": "Roman god of time and agriculture."
+  },
+  "Uranus": {
+    "display_name": "Uranus",
+    "type": "Ice Giant",
+    "distance": "19.8 AU",
+    "constellation": "Varies",
+    "description": "A pale blue planet that rotates on its side.",
+    "mythology": "Named after the Greek sky god."
+  },
+  "Neptune": {
+    "display_name": "Neptune",
+    "type": "Ice Giant",
+    "distance": "30 AU",
+    "constellation": "Varies",
+    "description": "A deep blue planet known for strong winds.",
+    "mythology": "Named after the Roman god of the sea."
+  },
+  "Pluto": {
+    "display_name": "Pluto",
+    "type": "Dwarf Planet",
+    "distance": "39 AU",
+    "constellation": "Varies",
+    "description": "A distant icy world in the Kuiper Belt.",
+    "mythology": "Named after the god of the underworld."
+  },
+
+  "Sirius": {
+    "display_name": "Sirius",
+    "type": "Star",
+    "distance": "8.6 light years",
+    "constellation": "Canis Major",
+    "description": "The brightest star in the night sky, shining blue-white.",
+    "mythology": "Known as the Dog Star, companion of Orion."
+  },
+  "Canopus": {
+    "display_name": "Canopus",
+    "type": "Star",
+    "distance": "310 light years",
+    "constellation": "Carina",
+    "description": "The second brightest star in the night sky.",
+    "mythology": "Named after a navigator in Greek mythology."
+  },
+  "Alpha Centauri": {
+    "display_name": "Alpha Centauri",
+    "type": "Star System",
+    "distance": "4.37 light years",
+    "constellation": "Centaurus",
+    "description": "The closest star system to Earth.",
+    "mythology": "Part of the centaur constellation."
+  },
+  "Arcturus": {
+    "display_name": "Arcturus",
+    "type": "Red Giant Star",
+    "distance": "36.7 light years",
+    "constellation": "Boötes",
+    "description": "A bright orange giant star.",
+    "mythology": "Guardian of the bear in Greek myth."
+  },
+  "Vega": {
+    "display_name": "Vega",
+    "type": "Star",
+    "distance": "25 light years",
+    "constellation": "Lyra",
+    "description": "A bright bluish star in the summer sky.",
+    "mythology": "Represents a harp in Greek mythology."
+  },
+  "Capella": {
+    "display_name": "Capella",
+    "type": "Star System",
+    "distance": "42 light years",
+    "constellation": "Auriga",
+    "description": "A bright golden star system.",
+    "mythology": "Represents a goat carried by a charioteer."
+  },
+  "Rigel": {
+    "display_name": "Rigel",
+    "type": "Blue Supergiant",
+    "distance": "860 light years",
+    "constellation": "Orion",
+    "description": "A luminous blue star marking Orion’s foot.",
+    "mythology": "Part of Orion the hunter."
+  },
+  "Procyon": {
+    "display_name": "Procyon",
+    "type": "Star",
+    "distance": "11.5 light years",
+    "constellation": "Canis Minor",
+    "description": "A bright nearby star.",
+    "mythology": "Known as the Little Dog star."
+  },
+  "Achernar": {
+    "display_name": "Achernar",
+    "type": "Star",
+    "distance": "139 light years",
+    "constellation": "Eridanus",
+    "description": "A hot, rapidly rotating star.",
+    "mythology": "Marks the end of the river constellation."
+  },
+  "Betelgeuse": {
+    "display_name": "Betelgeuse",
+    "type": "Red Supergiant",
+    "distance": "642 light years",
+    "constellation": "Orion",
+    "description": "A massive dying star glowing red.",
+    "mythology": "Represents Orion’s shoulder."
+  },
+  "Hadar": {
+    "display_name": "Hadar",
+    "type": "Star",
+    "distance": "390 light years",
+    "constellation": "Centaurus",
+    "description": "A bright blue-white star in the southern sky.",
+    "mythology": "Part of the Centaurus constellation."
+  },
+  "Altair": {
+    "display_name": "Altair",
+    "type": "Star",
+    "distance": "16.7 light years",
+    "constellation": "Aquila",
+    "description": "A fast-spinning bright star.",
+    "mythology": "Represents an eagle in Greek mythology."
+  },
+  "Acrux": {
+    "display_name": "Acrux",
+    "type": "Star",
+    "distance": "321 light years",
+    "constellation": "Crux",
+    "description": "The brightest star in the Southern Cross.",
+    "mythology": "Part of the famous southern constellation."
+  },
+  "Aldebaran": {
+    "display_name": "Aldebaran",
+    "type": "Red Giant",
+    "distance": "65 light years",
+    "constellation": "Taurus",
+    "description": "A bright orange star marking the eye of the bull.",
+    "mythology": "Represents the eye of Taurus."
+  },
+  "Antares": {
+    "display_name": "Antares",
+    "type": "Red Supergiant",
+    "distance": "550 light years",
+    "constellation": "Scorpius",
+    "description": "A massive red star often mistaken for Mars.",
+    "mythology": "Heart of the scorpion."
+  },
+  "Spica": {
+    "display_name": "Spica",
+    "type": "Binary Star",
+    "distance": "250 light years",
+    "constellation": "Virgo",
+    "description": "A bright blue star in Virgo.",
+    "mythology": "Represents a sheaf of wheat."
+  },
+  "Pollux": {
+    "display_name": "Pollux",
+    "type": "Star",
+    "distance": "34 light years",
+    "constellation": "Gemini",
+    "description": "A bright orange star.",
+    "mythology": "One of the twin brothers in Gemini."
+  },
+  "Fomalhaut": {
+    "display_name": "Fomalhaut",
+    "type": "Star",
+    "distance": "25 light years",
+    "constellation": "Piscis Austrinus",
+    "description": "A bright solitary star in the southern sky.",
+    "mythology": "Associated with the southern fish."
+  },
+  "Deneb": {
+    "display_name": "Deneb",
+    "type": "Blue Supergiant",
+    "distance": "2600 light years",
+    "constellation": "Cygnus",
+    "description": "A very luminous distant star.",
+    "mythology": "Represents the tail of the swan."
+  },
+  "Mimosa": {
+    "display_name": "Mimosa",
+    "type": "Star",
+    "distance": "350 light years",
+    "constellation": "Crux",
+    "description": "A bright blue star in the Southern Cross.",
+    "mythology": "Part of Crux constellation."
+  },
+  "Regulus": {
+    "display_name": "Regulus",
+    "type": "Star",
+    "distance": "79 light years",
+    "constellation": "Leo",
+    "description": "A bright star marking the heart of the lion.",
+    "mythology": "Represents royalty and power."
+  },
+  "Adhara": {
+    "display_name": "Adhara",
+    "type": "Star",
+    "distance": "430 light years",
+    "constellation": "Canis Major",
+    "description": "A bright blue star.",
+    "mythology": "Part of the Greater Dog constellation."
+  },
+  "Shaula": {
+    "display_name": "Shaula",
+    "type": "Star",
+    "distance": "570 light years",
+    "constellation": "Scorpius",
+    "description": "A bright star at the scorpion’s tail.",
+    "mythology": "Marks the tail of Scorpius."
+  },
+  "Castor": {
+    "display_name": "Castor",
+    "type": "Star System",
+    "distance": "51 light years",
+    "constellation": "Gemini",
+    "description": "A multiple star system.",
+    "mythology": "Twin brother of Pollux."
+  },
+  "Gacrux": {
+    "display_name": "Gacrux",
+    "type": "Red Giant",
+    "distance": "88 light years",
+    "constellation": "Crux",
+    "description": "A reddish star in the Southern Cross.",
+    "mythology": "Part of Crux."
+  },
+  "Bellatrix": {
+    "display_name": "Bellatrix",
+    "type": "Star",
+    "distance": "250 light years",
+    "constellation": "Orion",
+    "description": "A bright star in Orion.",
+    "mythology": "Known as the Amazon star."
+  },
+  "Elnath": {
+    "display_name": "Elnath",
+    "type": "Star",
+    "distance": "130 light years",
+    "constellation": "Taurus",
+    "description": "Marks the horn of the bull.",
+    "mythology": "Part of Taurus."
+  },
+  "Miaplacidus": {
+    "display_name": "Miaplacidus",
+    "type": "Star",
+    "distance": "111 light years",
+    "constellation": "Carina",
+    "description": "A bright star in the keel constellation.",
+    "mythology": "Part of a ship constellation."
+  },
+  "Alnilam": {
+    "display_name": "Alnilam",
+    "type": "Star",
+    "distance": "2000 light years",
+    "constellation": "Orion",
+    "description": "Middle star of Orion’s belt.",
+    "mythology": "Part of Orion’s belt."
+  },
+  "Alnair": {
+    "display_name": "Alnair",
+    "type": "Star",
+    "distance": "101 light years",
+    "constellation": "Grus",
+    "description": "A bright star in the crane constellation.",
+    "mythology": "Represents a crane."
+  },
+  "Alnitak": {
+    "display_name": "Alnitak",
+    "type": "Star",
+    "distance": "800 light years",
+    "constellation": "Orion",
+    "description": "One of Orion’s belt stars.",
+    "mythology": "Part of Orion’s belt."
+  },
+  "Regor": {
+    "display_name": "Regor",
+    "type": "Star",
+    "distance": "840 light years",
+    "constellation": "Vela",
+    "description": "A bright star in the sail constellation.",
+    "mythology": "Part of Argo Navis."
+  },
+  "Kaus Australis": {
+    "display_name": "Kaus Australis",
+    "type": "Star",
+    "distance": "145 light years",
+    "constellation": "Sagittarius",
+    "description": "A bright star in Sagittarius.",
+    "mythology": "Represents the archer."
+  },
+  "Avior": {
+    "display_name": "Avior",
+    "type": "Star",
+    "distance": "630 light years",
+    "constellation": "Carina",
+    "description": "A bright southern star.",
+    "mythology": "Part of ship constellation."
+  },
+  "Sargas": {
+    "display_name": "Sargas",
+    "type": "Star",
+    "distance": "270 light years",
+    "constellation": "Scorpius",
+    "description": "A bright yellow star.",
+    "mythology": "Part of the scorpion."
+  },
+  "Menkalinan": {
+    "display_name": "Menkalinan",
+    "type": "Star",
+    "distance": "81 light years",
+    "constellation": "Auriga",
+    "description": "A bright binary star.",
+    "mythology": "Part of Auriga."
+  },
+  "Atria": {
+    "display_name": "Atria",
+    "type": "Star",
+    "distance": "415 light years",
+    "constellation": "Triangulum Australe",
+    "description": "A bright orange giant.",
+    "mythology": "Southern triangle constellation."
+  },
+  "Alhena": {
+    "display_name": "Alhena",
+    "type": "Star",
+    "distance": "105 light years",
+    "constellation": "Gemini",
+    "description": "A bright white star.",
+    "mythology": "Part of the twins."
+  },
+  "Peacock": {
+    "display_name": "Peacock",
+    "type": "Star",
+    "distance": "183 light years",
+    "constellation": "Pavo",
+    "description": "Bright star in the peacock constellation.",
+    "mythology": "Named after the bird."
+  },
+  "Mirzam": {
+    "display_name": "Mirzam",
+    "type": "Star",
+    "distance": "500 light years",
+    "constellation": "Canis Major",
+    "description": "A hot blue star.",
+    "mythology": "Part of the Dog constellation."
+  },
+  "Polaris": {
+    "display_name": "Polaris",
+    "type": "Star",
+    "distance": "433 light years",
+    "constellation": "Ursa Minor",
+    "description": "The North Star, nearly fixed in the sky.",
+    "mythology": "Guided travelers for centuries."
+  }
+}
