@@ -280,7 +280,10 @@ def get_object_detail(object_name):
     """
 
     try:
-        with open("star_info.json") as f:
+        star_info_path = BASE_DIR / "star_info.json"
+        _debug_log(f"Loading star info from: {star_info_path}")
+        
+        with open(star_info_path) as f:
             data = json.load(f)
 
         result = data.get(object_name)
@@ -290,5 +293,6 @@ def get_object_detail(object_name):
 
         return {"error": "No data found for this object"}
 
-    except Exception:
+    except Exception as exc:
+        _debug_log(f"get_object_detail failed: {exc}")
         return {"error": "Failed to load star data"}
