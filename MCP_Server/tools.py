@@ -84,8 +84,89 @@ STARS = [
 
 
 # -------------------------
-# HELPER FUNCTIONS
+# MAGNITUDE/BRIGHTNESS CALCULATIONS
 # -------------------------
+
+# Cache for star magnitudes (name -> magnitude)
+_STAR_MAGNITUDE_CACHE = {}
+
+def get_planet_magnitude(name, skyfield_time):
+    """
+    Calculate apparent magnitude of a planet.
+    Lower values = brighter.
+    """
+    try:
+        sun = planets[10]
+        obj = planets[SOLAR_SYSTEM_MAP[name.lower()]]
+        
+        location = earth
+        
+        astrometric = location.at(skyfield_time).observe(obj)
+        
+        # Get elongation (angle from sun) for magnitude calculation
+        geocentric = location.at(skyfield_time).observe(obj)
+        sun_geocentric = location.at(skyfield_time).observe(sun)
+        
+        # Simple magnitude estimation based on object
+        # These are approximate values for average conditions
+        magnitude_map = {
+            "sun": -26.74,
+            "moon": -2.5,
+            "mercury": 1.0,
+            "venus": -4.0,
+            "mars": 1.5,
+            "jupiter": -2.0,
+            "saturn": 0.5,
+            "uranus": 5.5,
+            "neptune": 7.5,
+            "pluto": 14.0,
+        }
+        
+        mag = magnitude_map.get(name.lower(), 5.0)
+        return mag
+    except Exception as exc:
+        _debug_log(f"get_planet_magnitude failed for {name}: {exc}")
+        return 5.0  # default fallback
+
+
+def get_star_magnitude(star_name):
+    """
+    Get visual magnitude (V mag) of a star from Vizier catalog.
+    Lower values = brighter.
+    Caches results to avoid repeated queries.
+    """
+    if star_name in _STAR_MAGNITUDE_CACHE:
+        return _STAR_MAGNITUDE_CACHE[star_name]
+    
+    try:
+        vizier = Vizier(columns=["Vmag", "RA_ICRS", "DE_ICRS"])
+        vizier.ROW_LIMIT = 1
+        
+        # Try Gaia first (has V mag)
+        result = vizier.query_object(star_name, catalog="I/345/gaia2")
+        if result and len(result) > 0 and "Vmag" in result[0].colnames:
+            mag = float(result[0]["Vmag"][0])
+            _STAR_MAGNITUDE_CACHE[star_name] = mag
+            return mag
+        
+        # Try Hipparcos (has Vmag)
+        result = vizier.query_object(star_name, catalog="I/239/hip_main")
+        if result and len(result) > 0 and "Vmag" in result[0].colnames:
+            mag = float(result[0]["Vmag"][0])
+            _STAR_MAGNITUDE_CACHE[star_name] = mag
+            return mag
+        
+        # Default fallback (dim star)
+        _STAR_MAGNITUDE_CACHE[star_name] = 6.0
+        return 6.0
+        
+    except Exception as exc:
+        _debug_log(f"get_star_magnitude failed for {star_name}: {exc}")
+        _STAR_MAGNITUDE_CACHE[star_name] = 6.0
+        return 6.0
+
+
+
 
 
 def _resolve_observation_times(time_input=None):
@@ -202,21 +283,25 @@ def calculate_star_alt_az(ra, dec, lat, lon, alti, time_input=None):
  
 def get_visible_objects(lat, lon, time=None, alti=0):
     """
-    Returns list of visible objects (alt > 0) sorted by brightness (approx).
+    Returns list of visible objects (alt > 0) sorted by brightness (magnitude).
+    Lower magnitude = brighter.
     """
 
     visible = []
+    skyfield_time, _ = _resolve_observation_times(time)
 
     # Solar system objects
     for name in SOLAR_SYSTEM_MAP.keys():
         alt, az = calculate_solar_system_alt_az(name, lat, lon, alti, time_input=time)
         if alt is not None and alt > 0:
+            magnitude = get_planet_magnitude(name, skyfield_time)
             visible.append({
                 "name": name.capitalize(),
                 "type": "planet",
                 "alt": alt,
                 "az": az,
-                "brightness": -1  # approx
+                "magnitude": magnitude,
+                "brightness": magnitude
             })
 
     # Stars
@@ -227,16 +312,18 @@ def get_visible_objects(lat, lon, time=None, alti=0):
 
         alt, az = calculate_star_alt_az(ra, dec, lat, lon, alti, time_input=time)
         if alt is not None and alt > 0:
+            magnitude = get_star_magnitude(star)
             visible.append({
                 "name": star,
                 "type": "star",
                 "alt": alt,
                 "az": az,
-                "brightness": 1  # rough placeholder
+                "magnitude": magnitude,
+                "brightness": magnitude
             })
 
-    # Sort by brightness (lower = brighter)
-    visible.sort(key=lambda x: x["brightness"])
+    # Sort by brightness (lower magnitude = brighter = first)
+    visible.sort(key=lambda x: x["magnitude"])
 
     return visible[:50]  # return top 50
 
