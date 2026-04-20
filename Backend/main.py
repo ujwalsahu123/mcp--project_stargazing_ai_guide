@@ -1,117 +1,121 @@
 """
-LangChain + MCP Agent - Connect to multiple MCP servers with LLM intelligence
+Simple MCP Server Check - Test StarGuide MCP Server connection and tools
 """
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
-from langchain.agents import AgentExecutor, create_tool_calling_agent
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 import os
 import json
+import asyncio
 
 # Load environment variables
 load_dotenv()
 
-# MCP Servers configuration
-SERVERS = {
-    "starguide": {
-        "url": "https://MCP-Project-Stargazing.fastmcp.app/mcp",
-        "token": os.getenv("STARGUIDE_API_KEY"),
-        "description": "StarGuide MCP - Astronomy observation tools"
-    }
-}
+# Example values
+EXAMPLE_LAT = 19.274      # Mumbai
+EXAMPLE_LON = 72.881      # Mumbai
+EXAMPLE_TIME = "2026-04-20T20:30:00+05:30"
+EXAMPLE_ALTI = -52        # meters
+EXAMPLE_STAR = "Sirius"
 
-# Initialize LLM
-llm = ChatOpenAI(
-    model="gpt-4o-mini",
-    temperature=0,
-    api_key=os.getenv("OPENAI_API_KEY")
-)
+# MCP Server URL
+MCP_SERVER_URL = "https://MCP-Project-Stargazing.fastmcp.app/mcp"
+API_KEY = os.getenv("STARGUIDE_API_KEY")
 
 
-async def setup_agent():
-    """Setup the MCP agent with LLM."""
+async def check_mcp_server():
+    """Check if MCP Server is working and list all tools."""
+    
+    print("\n" + "="*70)
+    print("  MCP Server Status Check")
+    print("="*70)
+    print(f"Server URL: {MCP_SERVER_URL}")
+    print(f"API Key: {API_KEY[:20]}..." if API_KEY else "❌ NO API KEY")
+    
+    if not API_KEY:
+        print("\n❌ Error: STARGUIDE_API_KEY not set in .env")
+        return
     
     # Initialize MCP client
     mcp_client = MultiServerMCPClient()
     
-    # Connect to all servers
-    for server_name, config in SERVERS.items():
-        print(f"🔗 Connecting to {server_name}...")
-        try:
-            await mcp_client.add_server(
-                name=server_name,
-                url=config["url"],
-                auth_token=config["token"]
-            )
-            print(f"   ✓ Connected!")
-        except Exception as e:
-            print(f"   ✗ Error: {e}")
-    
-    # Get all tools from MCP servers
-    tools = await mcp_client.get_tools()
-    print(f"\n📦 Loaded {len(tools)} tools from MCP servers")
-    for tool in tools:
-        print(f"   - {tool.name}: {tool.description}")
-    
-    # Create agent prompt
-    system_prompt = """You are an astronomy expert assistant powered by the StarGuide MCP system.
-You have access to tools that can:
-- Get visible celestial objects from a location
-- Calculate positions of objects (alt/az)
-- Get detailed information about celestial objects
-
-Help users explore the night sky and understand celestial mechanics.
-Use the available tools to answer questions and provide insights."""
-
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-        MessagesPlaceholder(variable_name="chat_history", optional=True),
-        ("human", "{input}"),
-        MessagesPlaceholder(variable_name="agent_scratchpad"),
-    ])
-    
-    # Create agent
-    agent = create_tool_calling_agent(llm, tools, prompt)
-    executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
-    
-    return executor, mcp_client
-
-
-async def main():
-    """Main entry point."""
-    print("\n" + "="*60)
-    print("  StarGuide LangChain + MCP Agent")
-    print("="*60)
-    
-    # Setup agent
-    executor, mcp_client = await setup_agent()
-    
-    # Example queries
-    queries = [
-        "What celestial objects are visible from Mumbai (19.274°N, 72.881°E) on 2026-04-19 at 20:30 IST?",
-        "Where is Mars in the sky right now from that location?",
-        "Tell me about Sirius"
-    ]
-    
-    for query in queries:
-        print(f"\n{'='*60}")
-        print(f"👤 Query: {query}")
-        print(f"{'='*60}")
+    try:
+        print("\n🔗 Connecting to StarGuide MCP Server...")
+        await mcp_client.add_server(
+            name="starguide",
+            url=MCP_SERVER_URL,
+            auth_token=API_KEY
+        )
+        print("✓ Connected!\n")
         
-        try:
-            result = await executor.ainvoke({
-                "input": query,
-                "chat_history": []
+        # Get available tools
+        tools = await mcp_client.get_tools()
+        print(f"📦 Available Tools: {len(tools)}")
+        for tool in tools:
+            print(f"   - {tool.name}")
+        
+        # Test Tool 1: visible_objects
+        print("\n" + "="*70)
+        print("TEST 1: Visible Objects")
+        print("="*70)
+        print(f"Location: {EXAMPLE_LAT}°N, {EXAMPLE_LON}°E")
+        print(f"Time: {EXAMPLE_TIME}")
+        print(f"Altitude: {EXAMPLE_ALTI}m\n")
+        
+        tool_1 = next((t for t in tools if t.name == "visible_objects"), None)
+        if tool_1:
+            result = await tool_1.run({
+                "lat": EXAMPLE_LAT,
+                "lon": EXAMPLE_LON,
+                "time": EXAMPLE_TIME,
+                "alti": EXAMPLE_ALTI
             })
-            print(f"\n✓ Response: {result['output']}")
-        except Exception as e:
-            print(f"✗ Error: {e}")
+            print(f"Result:\n{json.dumps(result, indent=2)}\n")
+        
+        # Test Tool 2: object_position
+        print("="*70)
+        print("TEST 2: Object Position (Mars)")
+        print("="*70)
+        print(f"Object: Mars")
+        print(f"Location: {EXAMPLE_LAT}°N, {EXAMPLE_LON}°E")
+        print(f"Time: {EXAMPLE_TIME}\n")
+        
+        tool_2 = next((t for t in tools if t.name == "object_position"), None)
+        if tool_2:
+            result = await tool_2.run({
+                "object_name": "Mars",
+                "lat": EXAMPLE_LAT,
+                "lon": EXAMPLE_LON,
+                "time": EXAMPLE_TIME,
+                "alti": EXAMPLE_ALTI
+            })
+            print(f"Result:\n{json.dumps(result, indent=2)}\n")
+        
+        # Test Tool 3: object_detail
+        print("="*70)
+        print("TEST 3: Object Details")
+        print("="*70)
+        print(f"Object: {EXAMPLE_STAR}\n")
+        
+        tool_3 = next((t for t in tools if t.name == "object_detail"), None)
+        if tool_3:
+            result = await tool_3.run({
+                "object_name": EXAMPLE_STAR
+            })
+            print(f"Result:\n{json.dumps(result, indent=2)}\n")
+        
+        print("="*70)
+        print("✓ All tests completed successfully!")
+        print("="*70)
+        
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
     
-    await mcp_client.close()
+    finally:
+        await mcp_client.close()
 
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    asyncio.run(check_mcp_server())
