@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StarGuide</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- PAGE 1: Location Setup -->
+    <div id="page-location" class="page">
+        <!-- Galactic Header -->
+        <div class="galactic-header">
+            <div class="galaxy-animation">
+                <div class="star star-1"></div><div class="star star-2"></div><div class="star star-3"></div><div class="star star-4"></div><div class="star star-5"></div><div class="star star-6"></div><div class="star star-7"></div><div class="star star-8"></div><div class="star star-9"></div><div class="star star-10"></div><div class="star star-11"></div><div class="star star-12"></div><div class="star star-13"></div><div class="star star-14"></div><div class="star star-15"></div><div class="star star-16"></div><div class="star star-17"></div><div class="star star-18"></div><div class="star star-19"></div><div class="star star-20"></div><div class="star star-21"></div><div class="star star-22"></div><div class="star star-23"></div><div class="star star-24"></div><div class="star star-25"></div><div class="star star-26"></div><div class="star star-27"></div><div class="star star-28"></div><div class="star star-29"></div><div class="star star-30"></div><div class="star star-31"></div><div class="star star-32"></div><div class="star star-33"></div><div class="star star-34"></div><div class="star star-35"></div><div class="star star-36"></div><div class="star star-37"></div><div class="star star-38"></div><div class="star star-39"></div><div class="star star-40"></div><div class="star star-41"></div><div class="star star-42"></div><div class="star star-43"></div><div class="star star-44"></div><div class="star star-45"></div><div class="star star-46"></div><div class="star star-47"></div><div class="star star-48"></div><div class="star star-49"></div><div class="star star-50"></div><div class="star star-51"></div><div class="star star-52"></div><div class="star star-53"></div><div class="star star-54"></div><div class="star star-55"></div><div class="star star-56"></div><div class="star star-57"></div><div class="star star-58"></div><div class="star star-59"></div><div class="star star-60"></div><div class="star star-61"></div><div class="star star-62"></div><div class="star star-63"></div><div class="star star-64"></div><div class="star star-65"></div><div class="star star-66"></div><div class="star star-67"></div><div class="star star-68"></div><div class="star star-69"></div><div class="star star-70"></div><div class="star star-71"></div><div class="star star-72"></div><div class="star star-73"></div><div class="star star-74"></div><div class="star star-75"></div>
+            </div>
+            <h1 class="galaxy-title">StarGuide</h1>
+        </div>
+
+        <!-- Location Input Section -->
+        <div class="location-content">
+            <div class="input-section">
+                <label>Latitude</label>
+                <input type="number" id="latitude" placeholder="e.g., 19.074" min="-90" max="90" step="0.001">
+            </div>
+
+            <div class="input-section">
+                <label>Longitude</label>
+                <input type="number" id="longitude" placeholder="e.g., 72.881" min="-180" max="180" step="0.001">
+            </div>
+
+            <div class="input-section">
+                <label>Altitude (km) <span class="optional">optional</span></label>
+                <input type="number" id="altitude" placeholder="0" value="0" min="0" step="0.01">
+            </div>
+
+            <button id="autoDetectBtn" class="btn btn-detect">📡 Auto-Detect</button>
+            <div id="locationStatus" class="status-message"></div>
+            <button id="startBtn" class="btn btn-primary">Start Stargazing</button>
+        </div>
+    </div>
+
+    <!-- PAGE 2: Chat Interface -->
+    <div id="page-chat" class="page hidden">
+        <!-- Header -->
+        <div class="chat-header galactic-header">
+            <button id="backBtn" class="back-btn-circle">←</button>
+            <div class="galaxy-animation">
+                <div class="star star-1"></div><div class="star star-2"></div><div class="star star-3"></div><div class="star star-4"></div><div class="star star-5"></div><div class="star star-6"></div><div class="star star-7"></div><div class="star star-8"></div><div class="star star-9"></div><div class="star star-10"></div><div class="star star-11"></div><div class="star star-12"></div><div class="star star-13"></div><div class="star star-14"></div><div class="star star-15"></div><div class="star star-16"></div><div class="star star-17"></div><div class="star star-18"></div><div class="star star-19"></div><div class="star star-20"></div><div class="star star-21"></div><div class="star star-22"></div><div class="star star-23"></div><div class="star star-24"></div><div class="star star-25"></div><div class="star star-26"></div><div class="star star-27"></div><div class="star star-28"></div><div class="star star-29"></div><div class="star star-30"></div><div class="star star-31"></div><div class="star star-32"></div><div class="star star-33"></div><div class="star star-34"></div><div class="star star-35"></div><div class="star star-36"></div><div class="star star-37"></div><div class="star star-38"></div><div class="star star-39"></div><div class="star star-40"></div><div class="star star-41"></div><div class="star star-42"></div><div class="star star-43"></div><div class="star star-44"></div><div class="star star-45"></div><div class="star star-46"></div><div class="star star-47"></div><div class="star star-48"></div><div class="star star-49"></div><div class="star star-50"></div><div class="star star-51"></div><div class="star star-52"></div><div class="star star-53"></div><div class="star star-54"></div><div class="star star-55"></div><div class="star star-56"></div><div class="star star-57"></div><div class="star star-58"></div><div class="star star-59"></div><div class="star star-60"></div><div class="star star-61"></div><div class="star star-62"></div><div class="star star-63"></div><div class="star star-64"></div><div class="star star-65"></div><div class="star star-66"></div><div class="star star-67"></div><div class="star star-68"></div><div class="star star-69"></div><div class="star star-70"></div><div class="star star-71"></div><div class="star star-72"></div><div class="star star-73"></div><div class="star star-74"></div><div class="star star-75"></div>
+            </div>
+            <h1>StarGuide</h1>
+        </div>
+
+        <!-- Chat Container -->
+        <div class="chat-wrapper">
+            <div id="chatContainer" class="chat-container">
+                <!-- Messages here -->
+            </div>
+            <div id="chatLoading" class="chat-message assistant hidden">
+                <div class="message-wrapper">
+                    <div class="ai-avatar">🤖</div>
+                    <div class="chat-bubble loading-bubble">
+                        <div class="loading-content">
+                            <p class="loading-title">Generating</p>
+                            <div class="premium-loader">
+                                <div class="loader-bar loader-bar-1"></div>
+                                <div class="loader-bar loader-bar-2"></div>
+                                <div class="loader-bar loader-bar-3"></div>
+                                <div class="loader-bar loader-bar-4"></div>
+                                <div class="loader-bar loader-bar-5"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Input Area - FRESH -->
+        <div id="inputSection" class="fresh-input-area">
+            <input 
+                type="text" 
+                id="chatInput" 
+                placeholder="Ask about the sky..." 
+                class="fresh-input-box"
+            >
+            <button id="sendBtn" class="fresh-send-btn">→</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

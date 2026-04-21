@@ -1,0 +1,156 @@
+{
+  "Sirius": {
+    "aliases": ["dog star", "alpha canis majoris"]
+  },
+  "Canopus": {
+    "aliases": []
+  },
+  "Alpha Centauri": {
+    "aliases": ["rigil kentaurus"]
+  },
+  "Arcturus": {
+    "aliases": []
+  },
+  "Vega": {
+    "aliases": []
+  },
+  "Capella": {
+    "aliases": []
+  },
+  "Rigel": {
+    "aliases": []
+  },
+  "Procyon": {
+    "aliases": []
+  },
+  "Achernar": {
+    "aliases": []
+  },
+  "Betelgeuse": {
+    "aliases": ["alpha orionis"]
+  },
+  "Hadar": {
+    "aliases": []
+  },
+  "Altair": {
+    "aliases": []
+  },
+  "Acrux": {
+    "aliases": []
+  },
+  "Aldebaran": {
+    "aliases": ["alpha tauri"]
+  },
+  "Antares": {
+    "aliases": []
+  },
+  "Spica": {
+    "aliases": []
+  },
+  "Pollux": {
+    "aliases": []
+  },
+  "Fomalhaut": {
+    "aliases": []
+  },
+  "Deneb": {
+    "aliases": []
+  },
+  "Mimosa": {
+    "aliases": []
+  },
+  "Regulus": {
+    "aliases": []
+  },
+  "Adhara": {
+    "aliases": []
+  },
+  "Shaula": {
+    "aliases": []
+  },
+  "Castor": {
+    "aliases": []
+  },
+  "Gacrux": {
+    "aliases": []
+  },
+  "Bellatrix": {
+    "aliases": []
+  },
+  "Elnath": {
+    "aliases": []
+  },
+  "Miaplacidus": {
+    "aliases": []
+  },
+  "Alnilam": {
+    "aliases": []
+  },
+  "Alnair": {
+    "aliases": []
+  },
+  "Alnitak": {
+    "aliases": []
+  },
+  "Regor": {
+    "aliases": []
+  },
+  "Kaus Australis": {
+    "aliases": []
+  },
+  "Avior": {
+    "aliases": []
+  },
+  "Sargas": {
+    "aliases": []
+  },
+  "Menkalinan": {
+    "aliases": []
+  },
+  "Atria": {
+    "aliases": []
+  },
+  "Alhena": {
+    "aliases": []
+  },
+  "Peacock": {
+    "aliases": []
+  },
+  "Mirzam": {
+    "aliases": []
+  },
+  "Polaris": {
+    "aliases": ["north star"]
+  },
+
+  "Sun": {
+    "aliases": []
+  },
+  "Moon": {
+    "aliases": []
+  },
+  "Mercury": {
+    "aliases": []
+  },
+  "Venus": {
+    "aliases": ["morning star", "evening star"]
+  },
+  "Mars": {
+    "aliases": ["red planet"]
+  },
+  "Jupiter": {
+    "aliases": []
+  },
+  "Saturn": {
+    "aliases": []
+  },
+  "Uranus": {
+    "aliases": []
+  },
+  "Neptune": {
+    "aliases": []
+  },
+  "Pluto": {
+    "aliases": []
+  }
+}
