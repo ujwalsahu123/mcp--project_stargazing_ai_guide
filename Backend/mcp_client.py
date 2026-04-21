@@ -19,7 +19,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from langchain_openai import AzureChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
-from langchain_core.callbacks import StreamingStdOutCallbackHandler
+from langchain_core.tools import tool
 
 # Load environment variables
 load_dotenv()
@@ -29,6 +29,97 @@ MCP_SERVER_URL = "https://MCP-Project-Stargazing.fastmcp.app/mcp"
 API_KEY = os.getenv("STARGUIDE_API_KEY")
 BASE_DIR = Path(__file__).resolve().parent
 logger = logging.getLogger(__name__)
+
+
+FIRST_SYSTEM_PROMPT = """You are StarGuide, an astronomy assistant.
+
+IMPORTANT BEHAVIOR RULES:
+
+- The CURRENT user query is the primary source of intent.
+- Always decide tool usage based ONLY on the current query.
+- Chat history is secondary context and should be ignored unless the current query clearly depends on it.
+
+- If the current query is a greeting or unrelated (e.g., "hi", "hello"), DO NOT call any tools.
+- Do NOT continue previous tool-related tasks unless the current query explicitly asks for continuation.
+
+- Treat each query as independent unless it clearly references previous context (e.g., "and what about Jupiter?").
+
+Your job is to decide whether the user's question requires live, location-based data.
+
+Use tools ONLY when necessary.
+
+Tool usage rules:
+- Use a tool if the question depends on the user's current location or time (e.g., visibility, position, direction).
+- Use a tool if the user asks about where something is in the sky right now.
+- Use a tool if the user asks what is visible tonight.
+
+Do NOT use tools when:
+- The question is general knowledge (e.g., "What is Mars?")
+- The answer does not depend on current sky conditions.
+
+Available tools:
+- visible_objects -> for what is visible tonight
+- object_position -> for where an object is right now
+- object_detail -> for factual information about an object
+
+Rules:
+- Call only the minimum necessary tool(s).
+- Do not call multiple tools unless the question clearly requires it.
+- If no tool is needed, answer directly.
+
+Examples:
+
+User: "altitude of Mars"
+-> Call object_position
+
+User: "hi"
+-> Do NOT call any tool
+
+User: "what about Jupiter?"
+-> Use previous context and possibly call tool
+
+User: "thanks"
+-> Do NOT call any tool
+
+Keep your reasoning internal and do not explain tool decisions.
+"""
+
+
+SECOND_SYSTEM_PROMPT = """You are StarGuide, a helpful stargazing assistant.
+
+Answer the user's question clearly and directly.
+
+Rules:
+1. If tool results are provided, use them as the primary source of truth.
+2. If no tool results are provided, answer from general astronomy knowledge.
+3. Keep the answer short and focused (2-5 sentences).
+4. Do not add unnecessary information.
+5. Do not mention tools, internal reasoning, or steps.
+6. If the user asks for a position, give the position first.
+
+Style:
+- Simple, natural, and conversational
+- Clear and direct
+- No formatting or lists unless necessary
+"""
+
+
+@tool
+def visible_objects() -> str:
+    """Use to get what celestial objects are visible tonight from the user's location/time."""
+    return "visible_objects"
+
+
+@tool
+def object_position(object_name: str) -> str:
+    """Use to get where a named object is in the sky right now from the user's location/time."""
+    return object_name
+
+
+@tool
+def object_detail(object_name: str) -> str:
+    """Use to get factual astronomy information about a named object."""
+    return object_name
 
 
 def parse_sse_response(text: str) -> dict:
@@ -141,7 +232,6 @@ def get_streaming_llm():
         api_version="2024-08-01-preview",
         temperature=0.7,
         streaming=True,
-        callbacks=[StreamingStdOutCallbackHandler()],
     )
 
 
@@ -155,6 +245,45 @@ def load_object_names() -> dict:
         return {}
 
 
+def _format_metric(value, unit: str) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return f"{value:.1f}{unit}"
+    if isinstance(value, str):
+        normalized = value.strip()
+        if not normalized or normalized.lower() == "unknown":
+            return None
+        return normalized
+    return None
+
+
+def build_object_info(obj: dict) -> str:
+    """Create a concise info line using MCP metrics and any extra text."""
+    altitude = _format_metric(obj.get("altitude"), "°")
+    azimuth = _format_metric(obj.get("azimuth"), "°")
+    magnitude = _format_metric(obj.get("magnitude"), "")
+
+    parts = []
+    if altitude:
+        parts.append(f"Altitude {altitude}")
+    if azimuth:
+        parts.append(f"Azimuth {azimuth}")
+    if magnitude:
+        parts.append(f"Magnitude {magnitude}")
+
+    metrics_sentence = ", ".join(parts) + "." if parts else ""
+    extra = obj.get("info") or obj.get("description") or obj.get("summary")
+
+    if extra and metrics_sentence:
+        return f"{metrics_sentence} {extra}"
+    if extra:
+        return extra
+    if metrics_sentence:
+        return metrics_sentence
+    return "Visible tonight from your location."
+
+
 def normalize_object_record(obj: dict) -> dict:
     """Normalize MCP object data for the frontend."""
     if not isinstance(obj, dict):
@@ -166,30 +295,15 @@ def normalize_object_record(obj: dict) -> dict:
             "info": "Visible tonight from your location.",
         }
 
+    info_text = build_object_info(obj)
+
     return {
         "name": obj.get("name", "Unknown Object"),
         "magnitude": str(obj.get("magnitude", "Unknown")),
         "altitude": str(obj.get("altitude", "Unknown")),
         "azimuth": str(obj.get("azimuth", "Unknown")),
-        "info": obj.get("info")
-        or obj.get("description")
-        or obj.get("summary")
-        or "Visible tonight from your location.",
+        "info": info_text,
     }
-
-
-def match_object_name(query_lower: str, object_names: dict) -> Optional[str]:
-    """Find the best matching object name or alias in a user query."""
-    for canonical_name, meta in object_names.items():
-        if canonical_name.lower() in query_lower:
-            return canonical_name
-
-        aliases = meta.get("aliases", []) if isinstance(meta, dict) else []
-        for alias in aliases:
-            if alias.lower() in query_lower:
-                return canonical_name
-
-    return None
 
 
 async def fetch_visible_objects(
@@ -267,93 +381,38 @@ async def initial_stargazing_session(
         
         # For initial message: use top 10 if available, otherwise all
         objects_to_send = objects[:10] if total_objects >= 10 else objects
-        print(f"[OK] Sending {len(objects_to_send)} objects to LLM (top 10 or all if less than 10)")
+        print(f"[OK] Using {len(objects_to_send)} objects")
+
+        # Step 2: Generate intro only (non-streaming)
+        print("\n[2/2] Generating intro with LLM...")
+        llm = get_llm()
+
+        intro_prompt = """You are a poetic stargazing storyteller. Write a vivid 2-sentence opening about tonight's sky that draws the reader in. Be poetic but brief.
+
+Output ONLY the 2 sentences. NO markdown, NO formatting, NO JSON."""
+
+        messages = [
+            SystemMessage(content=intro_prompt),
+            HumanMessage(content=f"Location: {latitude}°, {longitude}° | Time: {observation_time}\n\nWrite a poetic intro for tonight's stargazing session with {len(objects_to_send)} visible objects."),
+        ]
+
+        intro = ""
+        try:
+            intro_response = llm.invoke(messages)
+            intro = intro_response.content if hasattr(intro_response, "content") else ""
+        except Exception as e:
+            print(f"[WARN] Intro generation failed: {e}")
+
+        if not intro.strip():
+            intro = f"Tonight at {latitude}°, {longitude}°, the celestial stage awaits your gaze."
 
         response_json = {
-            "intro": f"Tonight at {latitude}°, {longitude}°, {len(objects_to_send)} standout celestial objects are visible from your location.",
+            "intro": intro.strip(),
             "objects": objects_to_send,
         }
 
         print("[OK] Initial session prepared")
 
-        legacy_response = {
-            "success": True,
-            "format": "json",
-            "data": response_json,
-            "location": {
-                "latitude": latitude,
-                "longitude": longitude,
-                "altitude": altitude,
-            },
-            "observation_time": observation_time,
-            "total_objects_available": total_objects,
-            "objects_returned": len(objects_to_send),
-        }
-        
-        # Step 2: Single LLM call to extract object details
-        print("\n[2/2] Extracting object information with STREAMING...")
-        
-        llm = get_streaming_llm()
-        
-        system_prompt = """You are a poetic stargazing storyteller. Your task is to create engaging narratives about visible celestial objects.
-
-For the intro (1-2 sentences): Paint a vivid picture of tonight's sky that draws the reader in.
-
-For each object (EXACTLY 2-3 sentences ONLY): 
-- Be concise and impactful
-- Include one key fact (mythology, distance, or significance)
-- Make it poetic but brief
-- NO lengthy descriptions
-
-Return ONLY valid JSON:
-{
-    "intro": "2 sentence vivid opening about tonight's sky",
-    "objects": [
-        {
-            "name": "Object Name",
-            "magnitude": "value",
-            "altitude": "degrees",
-            "azimuth": "degrees",
-            "info": "5-7 sentence storytelling narrative about this object"
-        }
-    ]
-}"""
-
-        objects_text = json.dumps(objects_to_send, indent=2)
-        
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=f"""Extract information about these {len(objects_to_send)} visible objects at {latitude}°, {longitude}° on {observation_time}:
-
-{objects_text}
-
-Return ONLY valid JSON, no other text. Generate info for ALL {len(objects_to_send)} objects.""")
-        ]
-        
-        print("\n" + "-"*70)
-        response = llm.invoke(messages)
-        print("\n" + "-"*70)
-        
-        response_text = response.content
-        try:
-            # Clean response - remove markdown code blocks if present
-            cleaned = response_text.strip()
-            if cleaned.startswith("```"):
-                cleaned = cleaned.split("```")[1]
-                if cleaned.startswith("json"):
-                    cleaned = cleaned[4:]
-                cleaned = cleaned.strip()
-            
-            response_json = json.loads(cleaned)
-        except json.JSONDecodeError:
-            # Fallback if JSON parsing fails
-            response_json = {
-                "intro": f"Tonight at {latitude}°, {longitude}°, {len(objects)} celestial objects are visible.",
-                "objects": []
-            }
-        
-        print("[OK] Object information extracted")
-        
         return {
             "success": True,
             "format": "json",
@@ -392,65 +451,90 @@ async def initial_stargazing_session_stream(
     observation_time: str,
 ) -> AsyncIterator[dict]:
     """
-    Stream the initial session in UI-friendly chunks.
-
-    The intro is streamed as plain text deltas, and each object is emitted as a
-    separate structured event so the frontend never has to render raw JSON.
+    Stream initial stargazing session with real-time LLM streaming.
+    
+    Yields chunks as they're generated:
+    - paragraph chunks as LLM generates (TRUE STREAMING, not buffered)
+    - complete marker when done
     """
     try:
+        # Step 1: Get visible objects (non-blocking, we need these anyway)
+        print("[1/3] Fetching visible objects...")
         objects, total_objects = await fetch_visible_objects(
             latitude=latitude,
             longitude=longitude,
             altitude=altitude,
             observation_time=observation_time,
         )
-
+        
+        print(f"[OK] Got {total_objects} total visible objects")
+        
         objects_to_send = objects[:10] if total_objects >= 10 else objects
+        print(f"[OK] Using {len(objects_to_send)} objects")
 
-        intro_prompt = [
-            SystemMessage(
-                content=(
-                    "You are a warm stargazing guide. Write only a short opening for tonight's sky. "
-                    "Use exactly 2 sentences. No markdown, no bullets, no JSON."
-                )
-            ),
-            HumanMessage(
-                content=(
-                    f"Location: {latitude}°, {longitude}°\n"
-                    f"Time: {observation_time}\n"
-                    f"Visible objects count: {len(objects_to_send)}\n"
-                    f"Featured objects: {', '.join(obj['name'] for obj in objects_to_send[:5])}"
-                )
-            ),
+        # Step 2: Stream intro + object descriptions from LLM in real-time (NO buffering)
+        print("\n[2/2] Streaming intro + objects from LLM...")
+        
+        llm = get_streaming_llm()
+        
+        intro_prompt = """You are StarGuide, a stargazing assistant.
+
+    Your task is to describe tonight's sky in a natural, flowing paragraph.
+
+    Instructions:
+    1. Start with a short, vivid 2-sentence introduction about the night sky at the given location and time.
+    2. Then describe each visible object one by one, using numbering like "1)" "2)" in the same paragraph.
+    3. For each object, write 1-2 short sentences in simple, natural language.
+    4. Focus on what the object is and why it is interesting to observe.
+    5. Do NOT include technical data like altitude, azimuth, magnitude, coordinates, or numbers.
+    6. Do NOT use bullet points, headings, or new sections. Numbering is required and must stay inline in the paragraph.
+    7. Do NOT output JSON or structured format.
+    8. Everything must be in a single continuous paragraph.
+
+    Style:
+    - Warm, engaging, and conversational
+    - Simple and easy to understand
+    - Not too poetic, not too technical
+    - Keep everything concise
+
+    Important:
+    - Use ONLY the provided object names.
+    - Do not invent objects.
+    - Do not skip objects.
+
+    Output:
+    - A single paragraph only.
+    - No line breaks, no formatting, no lists (except inline numbering like "1)" "2)").
+    """
+
+        object_names = [obj.get("name", "Unknown Object") for obj in objects_to_send]
+        messages = [
+            SystemMessage(content=intro_prompt),
+            HumanMessage(content=f"""Location: {latitude}°, {longitude}°
+Time: {observation_time}
+
+Visible objects:
+{object_names}
+
+Describe tonight's sky and these objects."""),
         ]
-
-        intro_text = ""
-        intro_llm = get_streaming_llm()
-        async for chunk in intro_llm.astream(intro_prompt):
-            content_piece = chunk.content if hasattr(chunk, "content") else ""
-            if content_piece:
-                intro_text += content_piece
+        
+        print("-"*70)
+        
+        # Stream paragraph chunks directly - yield immediately as they arrive
+        async for chunk in llm.astream(messages):
+            content = chunk.content if hasattr(chunk, "content") else ""
+            if content:
+                print(content, end="", flush=True)
+                # Yield chunk immediately (TRUE STREAMING)
                 yield {
-                    "type": "intro_delta",
-                    "content": content_piece,
+                    "type": "intro",
+                    "content": content,
                 }
-
-        if not intro_text.strip():
-            intro_text = (
-                f"Tonight at {latitude}°, {longitude}°, {len(objects_to_send)} standout celestial "
-                "objects are visible from your location."
-            )
-            yield {
-                "type": "intro",
-                "content": intro_text,
-            }
-
-        for obj in objects_to_send:
-            yield {
-                "type": "object",
-                "data": obj,
-            }
-
+        
+        print("\n" + "-"*70)
+        
+        # Completion marker
         yield {
             "type": "complete",
             "total_objects_available": total_objects,
@@ -462,10 +546,16 @@ async def initial_stargazing_session_stream(
             },
             "observation_time": observation_time,
         }
+        
+        print(f"[OK] Stream complete - {len(objects_to_send)} objects described")
+        
     except Exception as e:
+        print(f"[FAIL] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        
         yield {
             "type": "error",
-            "success": False,
             "error": str(e),
         }
 
@@ -536,38 +626,10 @@ Valid celestial object names (use these for tool calls):
         # ====================================================================
         print("\n[2/4] First LLM call - Analyzing query and selecting tools (internal, no streaming)...")
         
-        first_system_prompt = """You are an expert stargazing assistant. Your task is to ALWAYS use MCP tools to get fresh, location-specific data.
-
-CRITICAL RULES:
-1. NEVER reuse or mention data from the initial "top visible objects" introduction
-2. ALWAYS call tools for ANY query about tonight's sky, object positions, or celestial information
-3. ALWAYS provide fresh data - do NOT use general/training data
-
-Available Tools (USE THEM!):
-1. **visible_objects**: Use for "what can I see", "what's visible tonight", "brightest objects", "anything interesting"
-2. **object_position**: Use for "where is [object]", "find [object]", "show me [object]", location/direction queries
-3. **object_detail**: Use for "tell me about [object]", "info on [object]", "facts about [object]"
-
-MANDATORY Tool Usage Rules:
-- "What can I see?" / "What's visible?" / "What's up tonight?" → MUST call visible_objects
-- "Where is [object]?" / "Show me [object]" / "Can I see [object]?" → MUST call object_position
-- "Tell me about [object]" / "What is [object]?" / "Info about [object]?" → MUST call object_detail
-- User mentions a specific object → MUST call relevant tool, NEVER use general knowledge
-- User asks about tonight's sky → MUST call visible_objects, NEVER reuse intro data
-- ANY question about positions/visibility/details → MUST call tools
-
-If user asks multiple questions → Call ALL relevant tools
-
-DO NOT:
-✗ Reuse "tonight's top visible objects" from the intro
-✗ Use training data instead of tool results
-✗ Avoid tool calls - ALWAYS call them
-✗ Mix old intro data with fresh tool results"""
-
         first_messages = [
-            SystemMessage(content=first_system_prompt),
+            SystemMessage(content=FIRST_SYSTEM_PROMPT),
             *messages,
-            HumanMessage(content=f"{query}\n\n{location_context}")
+            HumanMessage(content=f"{query}\n\n{location_context}"),
         ]
         
         # NO STREAMING for first call
@@ -575,8 +637,8 @@ DO NOT:
         #   1. Direct answer (should be shown to user) - but we don't know if this happens
         #   2. Tool call instructions (internal only, shouldn't be shown to user)
         # Since we can't differentiate, we don't stream. Second LLM call will stream the final answer.
-        llm = get_llm()
-        first_response = llm.invoke(first_messages)
+        planner_llm = get_llm().bind_tools([visible_objects, object_position, object_detail], tool_choice="auto")
+        first_response = planner_llm.invoke(first_messages)
         
         # ====================================================================
         # TOOL EXECUTION
@@ -584,60 +646,21 @@ DO NOT:
         tool_results = ""
         tools_called = 0
         
-        # Parse tool calls from LLM response if any
-        # For now, we'll check the text response for tool suggestions
-        response_text = first_response.content
-        
-        # Look for tool mentions in response
-        tool_keywords = {
-            "visible_objects": "visible",
-            "object_position": "position|altitude|azimuth",
-            "object_detail": "detail|information|about"
-        }
-        
-        tools_to_call = []
-        query_lower = query.lower()
-        
-        # Comprehensive keyword detection for visible_objects
-        visible_keywords = ["visible", "see tonight", "what can i see", "what's visible", "what's up", 
-                           "look at tonight", "tonight", "can i see", "anything to see", "objects tonight",
-                           "what's out tonight", "any objects", "brightest", "observable", "tonight's sky"]
-        
-        if any(keyword in query_lower for keyword in visible_keywords):
-            tools_to_call.append("visible_objects")
-        
-        # Comprehensive keyword detection for object_position
-        position_keywords = ["position", "altitude", "azimuth", "where", "locate", "show me", 
-                            "find", "can i see", "direction", "pointing", "how high", "northeast"]
-        
-        if any(keyword in query_lower for keyword in position_keywords):
-            # Extract object name from query
-            for obj_name in object_names.keys():
-                if obj_name.lower() in query_lower:
-                    tools_to_call.append(("object_position", obj_name))
-                    break
-        
-        # Comprehensive keyword detection for object_detail
-        detail_keywords = ["tell me about", "info", "detail", "facts", "information", "explain",
-                          "describe", "what is", "about", "distance", "size", "composition",
-                          "brightness", "magnitude", "star", "planet", "constellation"]
-        
-        if any(keyword in query_lower for keyword in detail_keywords):
-            for obj_name in object_names.keys():
-                if obj_name.lower() in query_lower:
-                    tools_to_call.append(("object_detail", obj_name))
-                    break
-        
-        # If still no tools detected but user asked a question about the sky → call visible_objects
-        if not tools_to_call and ("?" in query or "can" in query_lower or "show" in query_lower):
-            tools_to_call.append("visible_objects")
+        tools_to_call = first_response.tool_calls or []
         
         if tools_to_call:
             print(f"\n[3/4] Executing {len(tools_to_call)} tool(s)...")
             
             for tool_call in tools_to_call:
-                if isinstance(tool_call, tuple):
-                    tool_name, obj_name = tool_call
+                tool_name = tool_call.get("name")
+                tool_args = tool_call.get("args", {}) if isinstance(tool_call, dict) else {}
+                obj_name = (tool_args or {}).get("object_name")
+
+                if tool_name in ("object_position", "object_detail"):
+                    if not obj_name:
+                        print(f"  -> Skipping {tool_name}: missing object_name")
+                        continue
+
                     print(f"  -> Calling: {tool_name}({obj_name})")
                     
                     try:
@@ -665,11 +688,15 @@ DO NOT:
                 
                 else:
                     # visible_objects
-                    print(f"  -> Calling: {tool_call}")
+                    if tool_name != "visible_objects":
+                        print(f"  -> Skipping unknown tool: {tool_name}")
+                        continue
+
+                    print(f"  -> Calling: {tool_name}")
                     
                     try:
                         result = await call_mcp_tool(
-                            tool_call,
+                            tool_name,
                             lat=latitude,
                             lon=longitude,
                             time=observation_time,
@@ -694,12 +721,12 @@ DO NOT:
                         items_to_include = result_list
                         print(f"    [INFO] Sending ALL {len(result_list)} visible objects to 2nd LLM call for complete context")
                         
-                        tool_results += f"\n{tool_call}:\n{json.dumps(items_to_include, indent=2)}\n"
+                        tool_results += f"\n{tool_name}:\n{json.dumps(items_to_include, indent=2)}\n"
                         print(f"    [OK] Success")
                         tools_called += 1
                     except Exception as e:
                         print(f"    [FAIL] {e}")
-                        tool_results += f"\n{tool_call} Error: {str(e)}\n"
+                        tool_results += f"\n{tool_name} Error: {str(e)}\n"
         else:
             print("\n[3/4] No tools needed - LLM will provide direct answer")
         
@@ -708,26 +735,6 @@ DO NOT:
         # ====================================================================
         print("\n[4/4] Second LLM call - Generating final response...")
         
-        second_system_prompt = """You are an expert stargazing guide having a natural conversation with someone interested in the night sky.
-
-CRITICAL RULES:
-1. ALWAYS use the tool results provided - they contain the latest, location-specific data
-2. NEVER reuse or reference the "top visible objects" from the initial intro
-3. Base your answer ONLY on the tool results, NOT on general knowledge
-4. If tool results exist, weave them naturally - do NOT ignore them
-5. Present data as fresh observations for tonight, not generic information
-
-Response Style:
-✓ Conversational and warm, like talking to a friend
-✓ Accurate with the tool data provided (this is the authoritative source)
-✓ Concise but complete (2-4 paragraphs maximum)
-✓ Natural flow without unnecessary formatting
-✓ Use specific numbers/positions from tool data
-✓ Grounded in tonight's actual sky, not general astronomy
-
-If tools provided data → Use ONLY that data in your response
-If no tools were called → This shouldn't happen - tools are mandatory!"""
-
         if tool_results:
             final_prompt = f"""User's Question: {query}
 
@@ -743,9 +750,9 @@ Please answer their question naturally, using the tool results above."""
 Location: {latitude}°, {longitude}° | Time: {observation_time}
 
 Please share your expertise on this astronomical topic."""
-        
+
         second_messages = [
-            SystemMessage(content=second_system_prompt),
+            SystemMessage(content=SECOND_SYSTEM_PROMPT),
             *messages,
             HumanMessage(content=final_prompt),
         ]
@@ -828,97 +835,35 @@ Time: {observation_time}
 Valid celestial object names (use these for tool calls):
 {json.dumps(object_names, indent=2)}"""
 
-        first_system_prompt = """You are an expert stargazing assistant. Your task is to ALWAYS use MCP tools to get fresh, location-specific data.
-
-CRITICAL RULES:
-1. NEVER reuse or mention data from the initial "top visible objects" introduction
-2. ALWAYS call tools for ANY query about tonight's sky, object positions, or celestial information
-3. ALWAYS provide fresh data - do NOT use general/training data
-
-Available Tools (USE THEM!):
-1. **visible_objects**: Use for "what can I see", "what's visible tonight", "brightest objects", "anything interesting"
-2. **object_position**: Use for "where is [object]", "find [object]", "show me [object]", location/direction queries
-3. **object_detail**: Use for "tell me about [object]", "info on [object]", "facts about [object]"
-
-MANDATORY Tool Usage Rules:
-- "What can I see?" / "What's visible?" / "What's up tonight?" -> MUST call visible_objects
-- "Where is [object]?" / "Show me [object]" / "Can I see [object]?" -> MUST call object_position
-- "Tell me about [object]" / "What is [object]?" / "Info about [object]?" -> MUST call object_detail
-- User mentions a specific object -> MUST call relevant tool, NEVER use general knowledge
-- User asks about tonight's sky -> MUST call visible_objects, NEVER reuse intro data
-- ANY question about positions/visibility/details -> MUST call tools
-
-If user asks multiple questions -> Call ALL relevant tools
-
-DO NOT:
-✗ Reuse "tonight's top visible objects" from the intro
-✗ Use training data instead of tool results
-✗ Avoid tool calls - ALWAYS call them
-✗ Mix old intro data with fresh tool results"""
-
         first_messages = [
-            SystemMessage(content=first_system_prompt),
+            SystemMessage(content=FIRST_SYSTEM_PROMPT),
             *messages,
             HumanMessage(content=f"{query}\n\n{location_context}"),
         ]
 
-        first_llm = get_llm()
-        first_response = first_llm.invoke(first_messages)
+        planner_llm = get_llm().bind_tools([visible_objects, object_position, object_detail], tool_choice="auto")
+        first_response = planner_llm.invoke(first_messages)
 
         tool_results = ""
         tools_called = 0
-        tools_to_call = []
-        query_lower = query.lower()
-
-        visible_keywords = [
-            "visible", "see tonight", "what can i see", "what's visible", "what's up",
-            "look at tonight", "tonight", "can i see", "anything to see", "objects tonight",
-            "what's out tonight", "any objects", "brightest", "observable", "tonight's sky",
-        ]
-        if any(keyword in query_lower for keyword in visible_keywords):
-            tools_to_call.append("visible_objects")
-
-        position_keywords = [
-            "position", "altitude", "azimuth", "where", "locate", "show me",
-            "find", "can i see", "direction", "pointing", "how high", "northeast",
-        ]
-        matched_object_name = match_object_name(query_lower, object_names)
-
-        if any(keyword in query_lower for keyword in position_keywords) and matched_object_name:
-            tools_to_call.append(("object_position", matched_object_name))
-
-        detail_keywords = [
-            "tell me about", "info", "detail", "facts", "information", "explain",
-            "describe", "what is", "about", "distance", "size", "composition",
-            "brightness", "magnitude", "star", "planet", "constellation",
-        ]
-        if any(keyword in query_lower for keyword in detail_keywords) and matched_object_name:
-            tools_to_call.append(("object_detail", matched_object_name))
-
-        if not tools_to_call and ("?" in query or "can" in query_lower or "show" in query_lower):
-            tools_to_call.append("visible_objects")
-
-        deduped_tools = []
-        seen_tools = set()
-        for tool_call in tools_to_call:
-            key = json.dumps(tool_call)
-            if key in seen_tools:
-                continue
-            seen_tools.add(key)
-            deduped_tools.append(tool_call)
-        tools_to_call = deduped_tools
+        tools_to_call = first_response.tool_calls or []
 
         logger.info(
-            "Chat tool planner: matched_object=%s tools_requested=%s",
-            matched_object_name,
-            [tool_call if isinstance(tool_call, str) else f"{tool_call[0]}({tool_call[1]})" for tool_call in tools_to_call],
+            "Chat tool planner: tools_requested=%s",
+            [
+                tool_call.get("name") if isinstance(tool_call, dict) else str(tool_call)
+                for tool_call in tools_to_call
+            ],
         )
 
         metadata_chunk = {
             "type": "metadata",
             "query": query,
             "tools_called": 0,
-            "tools_requested": [tool_call if isinstance(tool_call, str) else tool_call[0] for tool_call in tools_to_call],
+            "tools_requested": [
+                tool_call.get("name") if isinstance(tool_call, dict) else str(tool_call)
+                for tool_call in tools_to_call
+            ],
             "location": {
                 "latitude": latitude,
                 "longitude": longitude,
@@ -944,8 +889,15 @@ DO NOT:
             return
 
         for tool_call in tools_to_call:
-            if isinstance(tool_call, tuple):
-                tool_name, obj_name = tool_call
+            tool_name = tool_call.get("name") if isinstance(tool_call, dict) else None
+            tool_args = tool_call.get("args", {}) if isinstance(tool_call, dict) else {}
+            obj_name = (tool_args or {}).get("object_name")
+
+            if tool_name in ("object_position", "object_detail"):
+                if not obj_name:
+                    logger.warning("Skipping %s due to missing object_name", tool_name)
+                    continue
+
                 logger.info("Executing MCP tool: %s object=%s", tool_name, obj_name)
                 try:
                     if tool_name == "object_position":
@@ -968,7 +920,7 @@ DO NOT:
                 except Exception as e:
                     tool_results += f"\n{tool_name} Error: {str(e)}\n"
                     logger.exception("MCP tool failed: %s object=%s", tool_name, obj_name)
-            else:
+            elif tool_name == "visible_objects":
                 logger.info("Executing MCP tool: %s", tool_call)
                 try:
                     result = await call_mcp_tool(
@@ -994,28 +946,13 @@ DO NOT:
                 except Exception as e:
                     tool_results += f"\nvisible_objects Error: {str(e)}\n"
                     logger.exception("MCP tool failed: visible_objects")
+            else:
+                logger.warning("Skipping unknown planner tool: %s", tool_name)
 
         metadata_chunk["tools_called"] = tools_called
         metadata_chunk["mode"] = "stream"
         logger.info("Chat tool execution complete: tools_called=%s", tools_called)
         yield metadata_chunk
-
-        second_system_prompt = """You are an expert stargazing guide having a natural conversation with someone interested in the night sky.
-
-CRITICAL RULES:
-1. ALWAYS use the tool results provided - they contain the latest, location-specific data
-2. NEVER reuse or reference the "top visible objects" from the initial intro
-3. Base your answer ONLY on the tool results, NOT on general knowledge
-4. If tool results exist, weave them naturally - do NOT ignore them
-5. Present data as fresh observations for tonight, not generic information
-
-Response Style:
-✓ Conversational and warm, like talking to a friend
-✓ Accurate with the tool data provided (this is the authoritative source)
-✓ Concise but complete (2-4 paragraphs maximum)
-✓ Natural flow without unnecessary formatting
-✓ Use specific numbers/positions from tool data
-✓ Grounded in tonight's actual sky, not general astronomy"""
 
         final_prompt = f"""User's Question: {query}
 
@@ -1027,7 +964,7 @@ Tool Results:
 Please answer their question naturally, using the tool results above."""
 
         second_messages = [
-            SystemMessage(content=second_system_prompt),
+            SystemMessage(content=SECOND_SYSTEM_PROMPT),
             *messages,
             HumanMessage(content=final_prompt),
         ]

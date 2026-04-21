@@ -1,4 +1,4 @@
-const CONFIG = { API_ENDPOINT: 'http://localhost:8000' };
+const CONFIG = { API_ENDPOINT: 'https://mcp-project-stargazing-ai-guide.onrender.com' };
 
 let state = {
     chatHistory: [],
@@ -92,7 +92,7 @@ async function startStargazing() {
     elements.chatContainer.innerHTML = '';
     state.chatHistory = [];
 
-    // Show initial loading in the same stream where assistant messages appear.
+    // Show initial loading
     showChatLoading('Generating');
     elements.chatInput.disabled = true;
     elements.sendBtn.disabled = true;
@@ -108,49 +108,58 @@ async function startStargazing() {
             throw new Error(`Request failed (${response.status})`);
         }
 
-        hideChatLoading();
-        const streamMessage = createStreamingAssistantMessage();
+        const streamMessage = createStreamingAssistantMessage(true);
         let streamedInitialText = '';
         let objectCount = 0;
+        let firstChunkRendered = false;
 
+        // Use NDJSON streaming parser from backend
         await streamNdjson(response, async (chunk) => {
             if (chunk.type === 'error') {
                 throw new Error(chunk.error || 'Initial streaming failed');
             }
 
-            if (chunk.type === 'intro_delta') {
-                const introPiece = chunk.content || '';
-                if (introPiece) {
-                    streamedInitialText += introPiece;
-                    streamMessage.append(introPiece);
-                    await waitForStreamPaint();
-                }
-            } else if (chunk.type === 'intro') {
+            if (chunk.type === 'intro') {
                 const intro = chunk.content || '';
                 if (intro) {
-                    if (!streamedInitialText.trim()) {
-                        streamedInitialText += `${intro}\n\n`;
-                        streamMessage.append(`${intro}\n\n`);
+                    if (!firstChunkRendered) {
+                        hideChatLoading();
+                        firstChunkRendered = true;
                     }
+                    // Backend already streams in chunks, just append directly
+                    streamedInitialText += intro;
+                    streamMessage.append(intro);
                     await waitForStreamPaint();
                 }
+            } else if (chunk.type === 'intro_start') {
+                // Optional: add heading before objects section starts
+                // Not needed if objects are added on-demand
             } else if (chunk.type === 'object' && chunk.data) {
                 const obj = chunk.data;
                 objectCount += 1;
+
+                if (!firstChunkRendered) {
+                    hideChatLoading();
+                    firstChunkRendered = true;
+                }
+                
                 if (objectCount === 1) {
-                    if (streamedInitialText.trim() && !streamedInitialText.endsWith('\n\n')) {
-                        streamedInitialText += '\n\n';
-                        streamMessage.append('\n\n');
-                    }
-                    const heading = '🌟 **Top Visible Objects Tonight:**\n\n';
-                    streamedInitialText += heading;
-                    streamMessage.append(heading);
+                    // First object: add heading
+                    streamedInitialText += '\n\n🌟 **Top Visible Objects:**\n\n';
+                    streamMessage.append('\n\n🌟 **Top Visible Objects:**\n\n');
                     await waitForStreamPaint();
                 }
-                const objectText = `${objectCount}. **${obj.name}**\n   Brightness: ${obj.magnitude} | Position: ${obj.altitude}° alt, ${obj.azimuth}° az\n   ${obj.info}\n\n`;
+                
+                const objectText = `${objectCount}. **${obj.name}**\n${obj.info}\n\n`;
                 streamedInitialText += objectText;
                 streamMessage.append(objectText);
                 await waitForStreamPaint();
+            } else if (chunk.type === 'complete') {
+                // Session complete, all objects streamed
+                console.log('Initial session complete', chunk);
+                if (!firstChunkRendered) {
+                    hideChatLoading();
+                }
             }
         });
 
