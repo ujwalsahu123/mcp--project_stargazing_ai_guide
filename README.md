@@ -1,5 +1,9 @@
 # StarGuide MCP AI Tool
 
+<a href = "https://ujwalsahu123.github.io/MCP--Project_Stargazing_AI_Guide/" > https://ujwalsahu123.github.io/MCP--Project_Stargazing_AI_Guide/ </a>
+
+Note -> It takes a few Minutes to Run at the First Start (due to starting the Backend, MCP server)
+
 StarGuide is a browser-based stargazing assistant built as a complete MCP-powered application:
 
 1. A static frontend collects the user's location and questions.
