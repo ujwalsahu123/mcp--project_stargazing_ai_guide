@@ -1,715 +1,340 @@
-# StarGuide Backend - LLM-Powered Stargazing API
+﻿# StarGuide Backend
 
-Intelligent stargazing assistant REST API combining Azure OpenAI GPT-4o, remote MCP astronomical tools, and FastAPI.
+StarGuide Backend is a FastAPI service for location-aware stargazing guidance.
+It combines Azure OpenAI with remote MCP astronomy tools and streams responses to the frontend using NDJSON.
 
----
+## Live Deployment
 
-## 🚀 Quick Start (2 minutes)
+This backend is deployed on Render.
 
-### 1. Install Dependencies
-```bash
-cd Backend
-uv sync
-```
+- Live API base URL: https://mcp-project-stargazing-ai-guide.onrender.com
+- Swagger UI: https://mcp-project-stargazing-ai-guide.onrender.com/docs
+- ReDoc: https://mcp-project-stargazing-ai-guide.onrender.com/redoc
+- Health endpoint: https://mcp-project-stargazing-ai-guide.onrender.com/health
 
-### 2. Configure Credentials
-Create/edit `.env`:
-```bash
-AZURE_OPENAI_ENDPOINT=https://your-instance.openai.azure.com
-AZURE_OPENAI_API_KEY=your-api-key
-AZURE_OPENAI_DEPLOYMENT_NAME=gpt-4o
-STARGUIDE_API_KEY=your-starguide-key
-```
+Use the base URL in frontend API config, not the docs URL.
 
-### 3. Start Server
-```bash
-uv run python main.py
-```
+## Table of Contents
 
-Server runs at: **http://localhost:8000**
-
-### 4. Test API
-- **API Docs:** http://localhost:8000/docs (Swagger UI)
-- **Health Check:** `curl http://localhost:8000/health`
-
----
-
-## 📋 Table of Contents
-
-1. [Overview](#overview)
-2. [API Endpoints](#api-endpoints)
-3. [Installation & Setup](#installation--setup)
-4. [How It Works](#how-it-works)
-5. [Architecture](#architecture)
-6. [Request/Response Examples](#requestresponse-examples)
-7. [Configuration](#configuration)
-8. [MCP Tools](#mcp-tools)
-9. [Running the Server](#running-the-server)
-10. [Debugging & Troubleshooting](#debugging--troubleshooting)
-11. [Frontend Integration](#frontend-integration)
-
----
+1. Overview
+2. Current Architecture
+3. Full Request Flow
+4. API Endpoints
+5. Streaming Format (NDJSON)
+6. Local Setup and Starter Guide
+7. Environment Variables
+8. Testing
+9. Deployment Notes (Render)
+10. Troubleshooting
 
 ## Overview
 
-This backend provides a production-ready REST API for stargazing queries powered by:
+This backend is designed for two user experiences:
 
-- **Azure OpenAI (GPT-4o)** - Natural language understanding and response generation
-- **Remote FastMCP Server** - 3 astronomical tools for real-time data
-- **FastAPI** - Modern REST framework with automatic documentation
-- **Async Processing** - Non-blocking request handling for better performance
-- **Chat History Support** - Multi-turn conversations with full context
+- Initial sky session: a warm, streamed introduction for the current sky.
+- Interactive chat: short, accurate answers with optional live tool calls when needed.
 
-### Key Features
+Core goals:
 
-✅ Two main endpoints: `/initial` (fresh queries) and `/chat` (contextual)  
-✅ Real-time astronomical data (visible objects, positions, details)  
-✅ Multi-turn conversation support with chat history  
-✅ Comprehensive error handling and logging  
-✅ Type-safe request/response models (Pydantic)  
-✅ Automatic API documentation (Swagger + ReDoc)  
-✅ Async/await for optimal performance  
+- Use live location/time astronomy data only when required.
+- Keep responses concise and user-focused.
+- Stream responses so UI feels real-time and responsive.
 
----
+## Current Architecture
+
+High-level components:
+
+- FastAPI app in main.py
+- LLM and MCP orchestration in mcp_client.py
+- Azure OpenAI via langchain-openai
+- Remote MCP tool server for astronomy data
+
+MCP endpoint used by backend:
+
+- https://MCP-Project-Stargazing.fastmcp.app/mcp
+
+Available MCP tools:
+
+- visible_objects
+- object_position
+- object_detail
+
+## Full Request Flow
+
+### 1) Initial Session Flow (POST /initial)
+
+Current behavior is streaming-first.
+
+1. Frontend sends latitude, longitude, altitude, and time.
+2. Backend calls visible_objects from MCP.
+3. Backend normalizes object records.
+4. Backend selects top objects for initial experience.
+5. LLM generates a single paragraph (intro plus object descriptions) in streaming mode.
+6. Backend streams text chunks as they arrive.
+7. Backend emits a final complete chunk with metadata.
+
+Important:
+
+- This endpoint returns streaming NDJSON.
+- Frontend should read chunks incrementally.
+
+### 2) Chat Flow (POST /chat)
+
+Chat uses a two-stage LLM design:
+
+1. First LLM call is a planner.
+   - Input includes current query, location/time context, and optional history.
+   - Uses tool binding with tool_choice auto.
+   - Decides whether to call tools and which minimal set is needed.
+
+2. Tool execution stage.
+   - Backend runs only requested MCP tools.
+   - Collects tool results in text/json form for response synthesis.
+
+3. Second LLM call is response generation.
+   - Uses tool results as primary truth when present.
+   - Streams user-facing answer chunks to frontend.
+
+Behavioral guardrails in planner prompt:
+
+- Current user query is primary intent source.
+- Chat history is secondary unless current query clearly depends on it.
+- Greetings or unrelated messages should not trigger tool calls.
+- Query should not continue old tool tasks unless user explicitly asks.
 
 ## API Endpoints
 
-### 1. GET `/health` - Health Check
+### GET /health
 
-**Purpose:** Verify API is running
+Purpose:
 
-**Response:**
-```json
+- Service liveness and version check.
+
+Typical response:
+
 {
   "status": "healthy",
   "version": "1.0.0",
   "message": "StarGuide API is running"
 }
-```
 
----
+### POST /initial
 
-### 2. POST `/initial` - Initial Stargazing Session
+Purpose:
 
-**Purpose:** Get initial stargazing experience with top 10 visible objects and poetic narratives
+- Start stargazing session with streamed paragraph output.
 
-**Use when:** User opens app and asks "What can I see tonight?"
+Request body:
 
-**Request:**
-```bash
-curl -X POST http://localhost:8000/initial \
-  -H "Content-Type: application/json" \
-  -d '{
-    "latitude": 19.274,
-    "longitude": 72.881,
-    "altitude": -0.052,
-    "time": "2026-04-20T20:30:00+05:30"
-  }'
-```
-
-**Request Model:**
-```python
 {
-  "latitude": float,        # Observer latitude (-90 to 90)
-  "longitude": float,       # Observer longitude (-180 to 180)
-  "altitude": float,        # Observer altitude in km (default: 0)
-  "time": str              # ISO 8601 format (e.g., 2026-04-20T20:30:00+05:30)
+  "latitude": 19.274,
+  "longitude": 72.881,
+  "altitude": 0,
+  "time": "2026-04-21T20:30:00+05:30"
 }
-```
 
-**Response:**
-```json
+Response type:
+
+- StreamingResponse
+- content-type: application/x-ndjson
+
+### POST /chat
+
+Purpose:
+
+- Conversational Q and A with smart tool usage.
+
+Request body:
+
 {
-  "success": true,
-  "format": "json",
-  "intro": "Tonight's sky unfurls a tapestry of luminous treasures...",
-  "objects": [
-    {
-      "name": "Venus",
-      "magnitude": "-4.0",
-      "altitude": "3.37°",
-      "azimuth": "289.59°",
-      "info": "Venus, the radiant evening star, glimmers low on the horizon..."
-    },
-    ...
-  ],
-  "total_objects_available": 31,
-  "objects_returned": 10,
-  "location": {
-    "latitude": 19.274,
-    "longitude": 72.881,
-    "altitude": -0.052
-  },
-  "observation_time": "2026-04-20T20:30:00+05:30"
+  "query": "Where is Jupiter right now?",
+  "latitude": 19.274,
+  "longitude": 72.881,
+  "altitude": 0,
+  "time": "2026-04-21T20:30:00+05:30",
+  "chat_history": [
+    { "role": "user", "content": "Can I see Mars tonight?" },
+    { "role": "assistant", "content": "Yes, Mars is visible from your location." }
+  ]
 }
-```
 
----
+Response type:
 
-### 3. POST `/chat` - Chat with StarGuide
+- StreamingResponse
+- content-type: application/x-ndjson
 
-**Purpose:** Answer astronomy questions with smart tool selection and conversation history support
+## Streaming Format (NDJSON)
 
-**Use when:** User asks follow-up questions or detailed queries
+Each line is one JSON object.
 
-**Request:**
-```bash
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "Is Jupiter visible tonight? Where is it exactly?",
-    "latitude": 19.274,
-    "longitude": 72.881,
-    "altitude": -0.052,
-    "time": "2026-04-20T20:30:00+05:30",
-    "chat_history": [
-      {
-        "role": "user",
-        "content": "What can I see tonight?"
-      },
-      {
-        "role": "assistant",
-        "content": "Tonight you can see Venus, Jupiter, the Moon..."
-      }
-    ]
-  }'
-```
+### /initial chunk types
 
-**Request Model:**
-```python
-{
-  "query": str,                      # Your astronomy question
-  "latitude": float,
-  "longitude": float,
-  "altitude": float,
-  "time": str,
-  "chat_history": Optional[List[{
-    "role": str,                     # "user" or "assistant"
-    "content": str                   # Message content
-  }]]
-}
-```
+- intro
+  - content: streamed text piece
+- complete
+  - totals and request metadata
+- error
+  - error message
 
-**Response:**
-```json
-{
-  "success": true,
-  "query": "Is Jupiter visible tonight? Where is it exactly?",
-  "response": "Yes, Jupiter is absolutely visible tonight at an altitude of 54.9° in the west-southwest (azimuth 282°). Through a telescope you'll see...",
-  "tools_called": 2,
-  "location": {
-    "latitude": 19.274,
-    "longitude": 72.881,
-    "altitude": -0.052
-  },
-  "observation_time": "2026-04-20T20:30:00+05:30"
-}
-```
+Example lines:
 
----
+{"type":"intro","content":"Tonight the sky opens with..."}
+{"type":"intro","content":"1) Moon appears bright..."}
+{"type":"complete","objects_returned":10,"total_objects_available":31}
 
-## Architecture
+### /chat chunk types
 
-### System Diagram
+- metadata
+  - query, requested tools, location, mode
+- direct_response
+  - used when planner selects no tools
+- response
+  - streamed answer piece from second LLM call
+- complete
+  - success and mode
+- error
+  - error details
 
-```
-Frontend Application
-    ↓
-REST Request (POST /initial or /chat)
-    ↓
-FastAPI Server (main.py)
-├─ Request validation (Pydantic)
-├─ CORS middleware (allows all origins)
-└─ Route handler
-    ↓
-MCP Client (mcp_client.py)
-├─ Call 1: Initial LLM call (analyze query)
-├─ Execute MCP Tools
-│   ├─ get_visible_objects
-│   ├─ get_object_position
-│   └─ get_object_detail
-└─ Call 2: Final LLM call (generate response)
-    ↓
-Azure OpenAI API (GPT-4o)
-    ↓
-Response JSON
-    ↓
-Frontend Display
-```
+Mode behavior:
 
-### File Structure
+- direct mode: no tool calls; first-call answer is returned.
+- stream mode: tools used and second-call answer streamed.
 
-```
-Backend/
-├── main.py                  ← FastAPI REST API + endpoints
-├── mcp_client.py            ← LLM-MCP orchestration (2 functions)
-├── test.py                  ← Quick Azure OpenAI connection test
-├── test1.py                 ← MCP HTTP tool calling test
-├── test2.py                 ← Azure OpenAI chat test
-├── test3.py                 ← Full integration test suite
-├── .env                     ← Your credentials (KEEP SECRET!)
-├── .env.example             ← Configuration template
-├── pyproject.toml           ← Dependencies and Python config
-├── object_names.json        ← Celestial object database
-├── star_info.json           ← Star information reference
-└── README.md                ← This file
-```
-
----
-
-## Installation & Setup
+## Local Setup and Starter Guide
 
 ### Prerequisites
 
 - Python 3.10+
-- `uv` package manager
-- Azure OpenAI account with GPT-4o deployment
-- Internet connection (for FastMCP server)
+- uv package manager
+- Azure OpenAI deployment (example: gpt-4o)
+- Network access to remote MCP server
 
-### Step 1: Install Dependencies
+### Step 1: Install dependencies
 
-```bash
 cd Backend
 uv sync
-```
 
-This installs:
-- `fastapi` - Web framework
-- `uvicorn` - ASGI server
-- `langchain` - LLM orchestration
-- `langchain-openai` - Azure OpenAI integration
-- `langchain-mcp-adapters` - MCP tool support
-- `python-dotenv` - Environment variable management
-- Other dependencies
+### Step 2: Configure environment file
 
-### Step 2: Get Azure OpenAI Credentials
+Create Backend/.env with:
 
-1. Go to Azure Portal: https://portal.azure.com
-2. Find your OpenAI instance
-3. Copy:
-   - **Endpoint:** (WITHOUT `/openai/v1` suffix) - e.g., `https://ujwalopenaiinstance.openai.azure.com`
-   - **API Key:** From Access Keys section
-   - **Deployment Name:** Usually `gpt-4o`
-
-### Step 3: Configure Environment
-
-Create `.env` file:
-```bash
 AZURE_OPENAI_ENDPOINT=https://your-instance.openai.azure.com
-AZURE_OPENAI_API_KEY=your-actual-key-here
+AZURE_OPENAI_API_KEY=your-azure-key
 AZURE_OPENAI_DEPLOYMENT_NAME=gpt-4o
-STARGUIDE_API_KEY=any-key-you-want
-```
+STARGUIDE_API_KEY=your-mcp-key
 
-### Step 4: Verify Setup
+### Step 3: Start backend
 
-```bash
-# Test LLM connection
-uv run python test.py
-
-# Should output:
-# ✓ Setup complete and working
-```
-
----
-
-## How It Works
-
-### Function 1: `initial_stargazing_session()`
-
-**Purpose:** Generate introduction to tonight's sky with storytelling
-
-**Flow:**
-1. Fetch all visible objects from MCP tool (typically 20-40 objects)
-2. Send top 10 to LLM with storytelling system prompt
-3. LLM generates 2-sentence intro + 5-7 sentence narrative per object
-4. Return JSON with intro + 10 objects
-
-**Characteristics:**
-- ✅ Single LLM call
-- ✅ Poetic, narrative-focused responses
-- ✅ 10 brightest/most interesting objects
-- ✅ Fast response time (3-8 seconds)
-
-### Function 2: `chat_with_starguide()`
-
-**Purpose:** Answer specific astronomy questions using smart tool selection
-
-**Flow:**
-1. Build message history with previous context
-2. **First LLM call:** Analyze query and decide which tools to use
-3. Execute selected tools (get_visible_objects, get_object_position, get_object_detail)
-4. **Second LLM call:** Generate final answer using tool results
-5. Return response
-
-**Characteristics:**
-- ✅ Two LLM calls (better decisions + natural responses)
-- ✅ Supports chat history for context
-- ✅ Smart tool selection (calls 0-3 tools as needed)
-- ✅ Conversational, informative tone
-- ✅ Medium response time (4-10 seconds)
-
-### Example: "Is Jupiter visible and where is it?"
-
-```
-Query: "Is Jupiter visible and where is it exactly?"
-
-[1] First LLM Call
-    LLM: "User wants visibility + position info. I'll use:
-          - get_visible_objects (to check if visible)
-          - get_object_position (for exact coordinates)"
-
-[2] Tool Execution
-    get_visible_objects → Returns 31 objects including Jupiter
-    get_object_position(Jupiter) → Returns alt: 54.92°, az: 282.26°
-
-[3] Second LLM Call
-    LLM: "Craft friendly response about Jupiter with real data..."
-    
-Response: "Yes, Jupiter is absolutely visible tonight at an altitude 
-           of 54.9° in the west-southwest (azimuth 282°)..."
-```
-
----
-
-## Request/Response Examples
-
-### Example 1: Initial Session (Simple)
-
-**Request:**
-```bash
-curl -X POST http://localhost:8000/initial \
-  -H "Content-Type: application/json" \
-  -d '{
-    "latitude": 19.274,
-    "longitude": 72.881,
-    "altitude": 0,
-    "time": "2026-04-20T20:30:00+05:30"
-  }'
-```
-
-**Response (shortened):**
-```json
-{
-  "success": true,
-  "intro": "Tonight's sky unfurls a tapestry of luminous treasures...",
-  "objects": [
-    {
-      "name": "Venus",
-      "magnitude": "-4.0",
-      "altitude": "3.37°",
-      "azimuth": "289.59°",
-      "info": "Venus, the radiant evening star, glimmers low on the horizon like a jewel spilled from the heavens..."
-    }
-  ],
-  "total_objects_available": 31,
-  "objects_returned": 10
-}
-```
-
-### Example 2: Chat with History
-
-**Request:**
-```bash
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "How far is Jupiter from Earth right now?",
-    "latitude": 19.274,
-    "longitude": 72.881,
-    "altitude": 0,
-    "time": "2026-04-20T20:30:00+05:30",
-    "chat_history": [
-      {
-        "role": "user",
-        "content": "What planets are visible?"
-      },
-      {
-        "role": "assistant",
-        "content": "Venus, Jupiter, and Mars are all visible tonight from your location."
-      }
-    ]
-  }'
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "query": "How far is Jupiter from Earth right now?",
-  "response": "Jupiter is currently approximately 715 million kilometers away from Earth...",
-  "tools_called": 0,
-  "observation_time": "2026-04-20T20:30:00+05:30"
-}
-```
-
----
-
-## Configuration
-
-### Environment Variables
-
-| Variable | Required | Purpose | Example |
-|----------|----------|---------|---------|
-| `AZURE_OPENAI_ENDPOINT` | Yes | API endpoint | `https://ujwalopenaiinstance.openai.azure.com` |
-| `AZURE_OPENAI_API_KEY` | Yes | Authentication | `FBedPoRqC4Ln...` |
-| `AZURE_OPENAI_DEPLOYMENT_NAME` | Yes | Model deployment | `gpt-4o` |
-| `STARGUIDE_API_KEY` | No | API key for frontend | Any string |
-
-**Important:** Endpoint must NOT include `/openai/v1` suffix
-
-### Location Format
-
-All endpoints expect ISO 8601 format time strings:
-```
-2026-04-20T20:30:00+05:30  ✅ Correct
-2026-04-20 20:30:00        ❌ Wrong (no timezone)
-20/04/2026 8:30 PM         ❌ Wrong (not ISO)
-```
-
----
-
-## Running the Server
-
-### Development Mode
-
-```bash
 uv run python main.py
-```
 
-- Server: http://localhost:8000
-- Logs: Printed to console
-- Auto-reload: Disabled
-- Workers: 1
+Default local URLs:
 
-### Production Mode
+- http://localhost:8000
+- http://localhost:8000/docs
+- http://localhost:8000/health
 
-```bash
-uv run uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
-```
+## Environment Variables
 
-- Accessible from all network interfaces
-- Multiple worker processes
-- Production-ready logging
+Required:
 
-### Access API Documentation
+- AZURE_OPENAI_ENDPOINT
+- AZURE_OPENAI_API_KEY
+- AZURE_OPENAI_DEPLOYMENT_NAME
+- STARGUIDE_API_KEY
 
-- **Swagger UI:** http://localhost:8000/docs
-- **ReDoc:** http://localhost:8000/redoc
+Notes:
 
-Both auto-generated from code with full descriptions and Try-It-Out feature.
+- Endpoint cleanup is handled in code if accidental /openai/v1 suffix exists.
+- Keep secrets in environment variables, never commit .env.
 
----
+## Testing
 
-## MCP Tools
+From Backend folder:
 
-Three tools available via remote FastMCP server:
+- uv run python test.py
+- uv run python test1.py
+- uv run python test2.py
+- uv run python test3.py
 
-### 1. `get_visible_objects`
+Suggested order:
 
-Get all celestial objects visible from location/time
+1. test.py for basic model connectivity
+2. test1.py for MCP tool connectivity
+3. test2.py for streaming model behavior
+4. test3.py for end-to-end integration checks
 
-**Parameters:**
-- `lat` (float) - Latitude in degrees
-- `lon` (float) - Longitude in degrees
-- `alti` (float) - Altitude in km
-- `time` (str) - ISO format time
+## Deployment Notes (Render)
 
-**Returns:** Array of visible objects with magnitude, position, type
+The backend is live on Render at:
 
-### 2. `get_object_position`
+- https://mcp-project-stargazing-ai-guide.onrender.com
 
-Get precise altitude/azimuth for specific object
+Recommended Render configuration:
 
-**Parameters:**
-- `object_name` (str) - Object name (e.g., "Mars", "Sirius")
-- `lat`, `lon`, `alti`, `time` - Location/time
+- Runtime: Python
+- Start command: uv run python main.py or uv run uvicorn main:app --host 0.0.0.0 --port 10000
+- Environment variables: same as local .env keys
+- Health check path: /health
 
-**Returns:** Altitude and azimuth in degrees
+For production hardening, consider:
 
-### 3. `get_object_detail`
+- Restricting CORS origins
+- Structured logging
+- Request rate limiting
+- Timeout and retry tuning for MCP calls
 
-Get comprehensive object information
+## Troubleshooting
 
-**Parameters:**
-- `object_name` (str) - Object name
+### 1) Authentication failures
 
-**Returns:** Type, distance, constellation, description, mythology
+Symptoms:
 
----
+- 401 from Azure or MCP calls
 
-## Debugging & Troubleshooting
+Checks:
 
-### Check Server Status
+- Verify AZURE_OPENAI_API_KEY
+- Verify AZURE_OPENAI_DEPLOYMENT_NAME
+- Verify STARGUIDE_API_KEY
 
-```bash
-curl http://localhost:8000/health
-```
+### 2) Slow responses
 
-Should return: `{"status": "healthy", "version": "1.0.0", ...}`
+Checks:
 
-### View Logs
+- Azure model latency
+- MCP endpoint latency
+- Network path between hosting region and MCP server
 
-Watch the terminal where `python main.py` is running. You'll see:
-- Request timestamps and methods
-- Function execution steps
-- Tool calls and results
-- Errors with full tracebacks
+### 3) No chunks in frontend
 
-### Test Individual Components
+Checks:
 
-```bash
-# Test LLM only
-uv run python test2.py
+- Confirm frontend reads NDJSON streaming body
+- Confirm response content-type is application/x-ndjson
+- Confirm reverse proxy does not buffer streaming responses
 
-# Test MCP tools only  
-uv run python test1.py
+### 4) Wrong tool calls on simple greetings
 
-# Full integration test
-uv run python test3.py
-```
+Checks:
 
-### Common Issues
+- Confirm current planner prompt includes query-first intent rules
+- Confirm current query is sent distinctly from history
 
-#### "ModuleNotFoundError: No module named 'fastapi'"
+## Frontend Integration Note
 
-```bash
-uv sync
-```
+If frontend is in this project root, configure API endpoint as:
 
-#### "Error: Could not initialize LLM"
+https://mcp-project-stargazing-ai-guide.onrender.com
 
-Check `.env` file:
-- ✓ Endpoint without `/openai/v1` suffix
-- ✓ API key is valid and not expired
-- ✓ Deployment name matches your Azure setup
+Then call:
 
-```bash
-# Verify manually
-uv run python test.py
-```
+- /initial
+- /chat
 
-#### "MCP Client initialization failed"
+Do not point frontend requests to /docs.
 
-- Internet connection working?
-- FastMCP server reachable?
-  ```bash
-  curl https://mcp-project-stargazing.fastmcp.app/mcp
-  ```
+## Version
 
-#### "Request times out"
-
-Normal timing:
-- First LLM call: 1-3 seconds
-- Tool execution: 0.5-2 seconds  
-- Second LLM call: 1-2 seconds
-- **Total: 3-8 seconds**
-
-If slower, check:
-- Network latency
-- Azure OpenAI API performance
-- FastMCP server status
-
-#### 404 Not Found
-
-- Server running? Check terminal
-- Correct URL? Use `http://localhost:8000`
-- Correct method? POST for `/initial` and `/chat`
-
----
-
-## Frontend Integration
-
-### React Example
-
-```javascript
-async function askStarGuide(query, lat, lon, time) {
-  const response = await fetch('http://localhost:8000/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      query,
-      latitude: lat,
-      longitude: lon,
-      altitude: 0,
-      time,
-      chat_history: []  // Add previous messages here
-    })
-  });
-  
-  const data = await response.json();
-  return data.response;
-}
-```
-
-### JavaScript with Fetch
-
-```javascript
-// Initial stargazing session
-fetch('http://localhost:8000/initial', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    latitude: 19.274,
-    longitude: 72.881,
-    altitude: 0,
-    time: new Date().toISOString()
-  })
-})
-.then(r => r.json())
-.then(data => console.log(data.objects));
-```
-
-### Vue.js Example
-
-```vue
-<template>
-  <div>
-    <button @click="getStargazing">Tonight's Sky</button>
-    <div v-for="obj in objects" :key="obj.name">
-      <h3>{{ obj.name }}</h3>
-      <p>{{ obj.info }}</p>
-    </div>
-  </div>
-</template>
-
-<script>
-export default {
-  data() {
-    return { objects: [] };
-  },
-  methods: {
-    async getStargazing() {
-      const res = await fetch('http://localhost:8000/initial', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          latitude: 19.274,
-          longitude: 72.881,
-          altitude: 0,
-          time: new Date().toISOString()
-        })
-      });
-      const data = await res.json();
-      this.objects = data.objects;
-    }
-  }
-};
-</script>
-```
-
----
-
-## Support
-
-For issues or questions:
-1. Check `.env` configuration
-2. Run test suite: `uv run python test3.py`
-3. Check server logs in terminal
-4. Visit API docs: http://localhost:8000/docs
-
----
-
-**Last Updated:** April 20, 2026
-**Version:** 1.0.0
-**Status:** Production Ready ✅
+- Service: StarGuide Backend
+- Version: 1.0.0
+- Last updated: 2026-04-21
