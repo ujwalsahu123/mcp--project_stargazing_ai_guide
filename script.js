@@ -113,24 +113,44 @@ async function startStargazing() {
         let streamedInitialText = '';
         let objectCount = 0;
 
-        await streamNdjson(response, (chunk) => {
-            if (chunk.type === 'intro') {
+        await streamNdjson(response, async (chunk) => {
+            if (chunk.type === 'error') {
+                throw new Error(chunk.error || 'Initial streaming failed');
+            }
+
+            if (chunk.type === 'intro_delta') {
+                const introPiece = chunk.content || '';
+                if (introPiece) {
+                    streamedInitialText += introPiece;
+                    streamMessage.append(introPiece);
+                    await waitForStreamPaint();
+                }
+            } else if (chunk.type === 'intro') {
                 const intro = chunk.content || '';
                 if (intro) {
-                    streamedInitialText += `${intro}\n\n`;
-                    streamMessage.append(`${intro}\n\n`);
+                    if (!streamedInitialText.trim()) {
+                        streamedInitialText += `${intro}\n\n`;
+                        streamMessage.append(`${intro}\n\n`);
+                    }
+                    await waitForStreamPaint();
                 }
             } else if (chunk.type === 'object' && chunk.data) {
                 const obj = chunk.data;
                 objectCount += 1;
                 if (objectCount === 1) {
+                    if (streamedInitialText.trim() && !streamedInitialText.endsWith('\n\n')) {
+                        streamedInitialText += '\n\n';
+                        streamMessage.append('\n\n');
+                    }
                     const heading = '🌟 **Top Visible Objects Tonight:**\n\n';
                     streamedInitialText += heading;
                     streamMessage.append(heading);
+                    await waitForStreamPaint();
                 }
                 const objectText = `${objectCount}. **${obj.name}**\n   Brightness: ${obj.magnitude} | Position: ${obj.altitude}° alt, ${obj.azimuth}° az\n   ${obj.info}\n\n`;
                 streamedInitialText += objectText;
                 streamMessage.append(objectText);
+                await waitForStreamPaint();
             }
         });
 
@@ -201,7 +221,7 @@ async function sendMessage() {
             let streamedText = '';
             let receivedAnyContent = false;
 
-            await streamNdjson(response, (chunk) => {
+            await streamNdjson(response, async (chunk) => {
                 if (chunk.type === 'error') {
                     throw new Error(chunk.error || 'Streaming failed');
                 }
@@ -212,6 +232,7 @@ async function sendMessage() {
                         receivedAnyContent = true;
                         streamedText += piece;
                         pendingAssistant.append(piece);
+                        await waitForStreamPaint();
                     }
                 }
 
@@ -220,6 +241,7 @@ async function sendMessage() {
                     receivedAnyContent = true;
                     streamedText = full;
                     pendingAssistant.setContent(full);
+                    await waitForStreamPaint();
                 }
             });
 
@@ -357,21 +379,46 @@ function createStreamingAssistantMessage(showInlineLoader = false) {
     elements.chatContainer.appendChild(msgDiv);
 
     let accumulated = '';
+    let hasShownContent = false;
+
+    const render = () => {
+        if (showInlineLoader && !hasShownContent) {
+            bubble.innerHTML = `
+                <div class="inline-thinking" aria-live="polite">
+                    <span class="inline-thinking-label">Thinking</span>
+                    <span class="inline-loader" aria-hidden="true">
+                        <span class="inline-loader-bar"></span>
+                        <span class="inline-loader-bar"></span>
+                        <span class="inline-loader-bar"></span>
+                        <span class="inline-loader-bar"></span>
+                    </span>
+                </div>
+            `;
+            return;
+        }
+
+        bubble.innerHTML = formatAssistantContent(accumulated);
+    };
+
     const append = (chunk) => {
         if (!chunk) return;
         accumulated += chunk;
-        bubble.innerHTML = formatAssistantContent(accumulated);
+        hasShownContent = accumulated.trim().length > 0;
+        render();
         elements.chatContainer.scrollTop = elements.chatContainer.scrollHeight;
     };
 
     const setContent = (content) => {
         accumulated = content || '';
-        bubble.innerHTML = formatAssistantContent(accumulated);
+        hasShownContent = accumulated.trim().length > 0;
+        render();
         elements.chatContainer.scrollTop = elements.chatContainer.scrollHeight;
     };
 
     const finalize = () => {
-        bubble.innerHTML = formatAssistantContent(accumulated.trim());
+        accumulated = accumulated.trim();
+        hasShownContent = accumulated.length > 0;
+        render();
         elements.chatContainer.scrollTop = elements.chatContainer.scrollHeight;
     };
 
@@ -409,7 +456,7 @@ async function streamNdjson(response, onChunk) {
                 continue;
             }
 
-            onChunk(chunk);
+            await onChunk(chunk);
         }
     }
 
@@ -423,8 +470,13 @@ async function streamNdjson(response, onChunk) {
             return;
         }
 
-        onChunk(chunk);
+        await onChunk(chunk);
     }
+}
+
+async function waitForStreamPaint() {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 function getISOTime() {

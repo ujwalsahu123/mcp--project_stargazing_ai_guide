@@ -19,7 +19,10 @@ from typing import Optional, List
 import logging
 import json
 
-from mcp_client import initial_stargazing_session, chat_with_starguide_stream
+from mcp_client import (
+    initial_stargazing_session,
+    chat_with_starguide_stream,
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -142,40 +145,36 @@ async def get_initial_session(request: InitialSessionRequest):
     """
     try:
         logger.info(f"Initial session requested: lat={request.latitude}, lon={request.longitude}, time={request.time}")
-        
+
         result = await initial_stargazing_session(
             latitude=request.latitude,
             longitude=request.longitude,
             altitude=request.altitude,
             observation_time=request.time,
         )
-        
+
         if not result.get("success"):
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to get initial session: {result.get('error', 'Unknown error')}"
             )
-        
-        # Extract data from result
+
         data = result.get("data", {})
-        
+
         async def stream_response():
-            # Stream intro first
             intro_chunk = {
                 "type": "intro",
                 "content": data.get("intro", "")
             }
             yield json.dumps(intro_chunk) + "\n"
-            
-            # Then stream each object
+
             for obj in data.get("objects", []):
                 obj_chunk = {
                     "type": "object",
                     "data": obj
                 }
                 yield json.dumps(obj_chunk) + "\n"
-            
-            # Finally stream metadata
+
             metadata_chunk = {
                 "type": "complete",
                 "total_objects_available": result.get("total_objects_available", 0),
@@ -187,7 +186,12 @@ async def get_initial_session(request: InitialSessionRequest):
         
         return StreamingResponse(
             stream_response(),
-            media_type="application/x-ndjson"
+            media_type="application/x-ndjson",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive",
+            },
         )
         
     except Exception as e:
@@ -248,7 +252,12 @@ async def chat_with_guide(request: ChatRequest):
         
         return StreamingResponse(
             stream_response(),
-            media_type="application/x-ndjson"
+            media_type="application/x-ndjson",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive",
+            },
         )
         
     except Exception as e:

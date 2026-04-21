@@ -13,7 +13,9 @@ import os
 import json
 import asyncio
 import httpx
+import logging
 from typing import Optional, AsyncIterator
+from pathlib import Path
 from dotenv import load_dotenv
 from langchain_openai import AzureChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
@@ -25,6 +27,8 @@ load_dotenv()
 # MCP Server config
 MCP_SERVER_URL = "https://MCP-Project-Stargazing.fastmcp.app/mcp"
 API_KEY = os.getenv("STARGUIDE_API_KEY")
+BASE_DIR = Path(__file__).resolve().parent
+logger = logging.getLogger(__name__)
 
 
 def parse_sse_response(text: str) -> dict:
@@ -144,11 +148,77 @@ def get_streaming_llm():
 def load_object_names() -> dict:
     """Load celestial object names from JSON."""
     try:
-        with open("object_names.json", "r") as f:
+        with open(BASE_DIR / "object_names.json", "r", encoding="utf-8") as f:
             return json.load(f)
     except:
         print("[WARN] Could not load object_names.json")
         return {}
+
+
+def normalize_object_record(obj: dict) -> dict:
+    """Normalize MCP object data for the frontend."""
+    if not isinstance(obj, dict):
+        return {
+            "name": str(obj),
+            "magnitude": "Unknown",
+            "altitude": "Unknown",
+            "azimuth": "Unknown",
+            "info": "Visible tonight from your location.",
+        }
+
+    return {
+        "name": obj.get("name", "Unknown Object"),
+        "magnitude": str(obj.get("magnitude", "Unknown")),
+        "altitude": str(obj.get("altitude", "Unknown")),
+        "azimuth": str(obj.get("azimuth", "Unknown")),
+        "info": obj.get("info")
+        or obj.get("description")
+        or obj.get("summary")
+        or "Visible tonight from your location.",
+    }
+
+
+def match_object_name(query_lower: str, object_names: dict) -> Optional[str]:
+    """Find the best matching object name or alias in a user query."""
+    for canonical_name, meta in object_names.items():
+        if canonical_name.lower() in query_lower:
+            return canonical_name
+
+        aliases = meta.get("aliases", []) if isinstance(meta, dict) else []
+        for alias in aliases:
+            if alias.lower() in query_lower:
+                return canonical_name
+
+    return None
+
+
+async def fetch_visible_objects(
+    latitude: float,
+    longitude: float,
+    altitude: float,
+    observation_time: str,
+) -> tuple[list, int]:
+    """Fetch and normalize visible objects from the MCP tool."""
+    visible_data = await call_mcp_tool(
+        "visible_objects",
+        lat=latitude,
+        lon=longitude,
+        time=observation_time,
+        alti=altitude,
+    )
+
+    if isinstance(visible_data, dict) and "result" in visible_data:
+        objects = extract_visible_objects(visible_data["result"])
+    else:
+        objects = extract_visible_objects(visible_data)
+
+    if isinstance(objects, dict):
+        objects = list(objects.values()) if objects else []
+    elif not isinstance(objects, list):
+        objects = [objects] if objects else []
+
+    normalized_objects = [normalize_object_record(obj) for obj in objects]
+    return normalized_objects, len(normalized_objects)
 
 
 # ============================================================================
@@ -186,33 +256,39 @@ async def initial_stargazing_session(
     try:
         # Step 1: Get visible objects
         print("[1/2] Fetching visible objects...")
-        visible_data = await call_mcp_tool(
-            "visible_objects",
-            lat=latitude,
-            lon=longitude,
-            time=observation_time,
-            alti=altitude,
+        objects, total_objects = await fetch_visible_objects(
+            latitude=latitude,
+            longitude=longitude,
+            altitude=altitude,
+            observation_time=observation_time,
         )
         
-        # Parse response using the new extraction function
-        # visible_data should have a 'result' key from the MCP response
-        if isinstance(visible_data, dict) and "result" in visible_data:
-            objects = extract_visible_objects(visible_data["result"])
-        else:
-            objects = extract_visible_objects(visible_data)
-        
-        # Ensure objects is a list
-        if isinstance(objects, dict):
-            objects = list(objects.values()) if objects else []
-        elif not isinstance(objects, list):
-            objects = [objects] if objects else []
-        
-        total_objects = len(objects)
         print(f"[OK] Got {total_objects} total visible objects (actually retrieved from MCP)")
         
         # For initial message: use top 10 if available, otherwise all
         objects_to_send = objects[:10] if total_objects >= 10 else objects
         print(f"[OK] Sending {len(objects_to_send)} objects to LLM (top 10 or all if less than 10)")
+
+        response_json = {
+            "intro": f"Tonight at {latitude}°, {longitude}°, {len(objects_to_send)} standout celestial objects are visible from your location.",
+            "objects": objects_to_send,
+        }
+
+        print("[OK] Initial session prepared")
+
+        legacy_response = {
+            "success": True,
+            "format": "json",
+            "data": response_json,
+            "location": {
+                "latitude": latitude,
+                "longitude": longitude,
+                "altitude": altitude,
+            },
+            "observation_time": observation_time,
+            "total_objects_available": total_objects,
+            "objects_returned": len(objects_to_send),
+        }
         
         # Step 2: Single LLM call to extract object details
         print("\n[2/2] Extracting object information with STREAMING...")
@@ -306,6 +382,91 @@ Return ONLY valid JSON, no other text. Generate info for ALL {len(objects_to_sen
                 "altitude": altitude,
             },
             "observation_time": observation_time,
+        }
+
+
+async def initial_stargazing_session_stream(
+    latitude: float,
+    longitude: float,
+    altitude: float,
+    observation_time: str,
+) -> AsyncIterator[dict]:
+    """
+    Stream the initial session in UI-friendly chunks.
+
+    The intro is streamed as plain text deltas, and each object is emitted as a
+    separate structured event so the frontend never has to render raw JSON.
+    """
+    try:
+        objects, total_objects = await fetch_visible_objects(
+            latitude=latitude,
+            longitude=longitude,
+            altitude=altitude,
+            observation_time=observation_time,
+        )
+
+        objects_to_send = objects[:10] if total_objects >= 10 else objects
+
+        intro_prompt = [
+            SystemMessage(
+                content=(
+                    "You are a warm stargazing guide. Write only a short opening for tonight's sky. "
+                    "Use exactly 2 sentences. No markdown, no bullets, no JSON."
+                )
+            ),
+            HumanMessage(
+                content=(
+                    f"Location: {latitude}°, {longitude}°\n"
+                    f"Time: {observation_time}\n"
+                    f"Visible objects count: {len(objects_to_send)}\n"
+                    f"Featured objects: {', '.join(obj['name'] for obj in objects_to_send[:5])}"
+                )
+            ),
+        ]
+
+        intro_text = ""
+        intro_llm = get_streaming_llm()
+        async for chunk in intro_llm.astream(intro_prompt):
+            content_piece = chunk.content if hasattr(chunk, "content") else ""
+            if content_piece:
+                intro_text += content_piece
+                yield {
+                    "type": "intro_delta",
+                    "content": content_piece,
+                }
+
+        if not intro_text.strip():
+            intro_text = (
+                f"Tonight at {latitude}°, {longitude}°, {len(objects_to_send)} standout celestial "
+                "objects are visible from your location."
+            )
+            yield {
+                "type": "intro",
+                "content": intro_text,
+            }
+
+        for obj in objects_to_send:
+            yield {
+                "type": "object",
+                "data": obj,
+            }
+
+        yield {
+            "type": "complete",
+            "total_objects_available": total_objects,
+            "objects_returned": len(objects_to_send),
+            "location": {
+                "latitude": latitude,
+                "longitude": longitude,
+                "altitude": altitude,
+            },
+            "observation_time": observation_time,
+        }
+    except Exception as e:
+        yield {
+            "type": "error",
+            "success": False,
+            "error": str(e),
         }
 
 
@@ -721,30 +882,43 @@ DO NOT:
             "position", "altitude", "azimuth", "where", "locate", "show me",
             "find", "can i see", "direction", "pointing", "how high", "northeast",
         ]
-        if any(keyword in query_lower for keyword in position_keywords):
-            for obj_name in object_names.keys():
-                if obj_name.lower() in query_lower:
-                    tools_to_call.append(("object_position", obj_name))
-                    break
+        matched_object_name = match_object_name(query_lower, object_names)
+
+        if any(keyword in query_lower for keyword in position_keywords) and matched_object_name:
+            tools_to_call.append(("object_position", matched_object_name))
 
         detail_keywords = [
             "tell me about", "info", "detail", "facts", "information", "explain",
             "describe", "what is", "about", "distance", "size", "composition",
             "brightness", "magnitude", "star", "planet", "constellation",
         ]
-        if any(keyword in query_lower for keyword in detail_keywords):
-            for obj_name in object_names.keys():
-                if obj_name.lower() in query_lower:
-                    tools_to_call.append(("object_detail", obj_name))
-                    break
+        if any(keyword in query_lower for keyword in detail_keywords) and matched_object_name:
+            tools_to_call.append(("object_detail", matched_object_name))
 
         if not tools_to_call and ("?" in query or "can" in query_lower or "show" in query_lower):
             tools_to_call.append("visible_objects")
+
+        deduped_tools = []
+        seen_tools = set()
+        for tool_call in tools_to_call:
+            key = json.dumps(tool_call)
+            if key in seen_tools:
+                continue
+            seen_tools.add(key)
+            deduped_tools.append(tool_call)
+        tools_to_call = deduped_tools
+
+        logger.info(
+            "Chat tool planner: matched_object=%s tools_requested=%s",
+            matched_object_name,
+            [tool_call if isinstance(tool_call, str) else f"{tool_call[0]}({tool_call[1]})" for tool_call in tools_to_call],
+        )
 
         metadata_chunk = {
             "type": "metadata",
             "query": query,
             "tools_called": 0,
+            "tools_requested": [tool_call if isinstance(tool_call, str) else tool_call[0] for tool_call in tools_to_call],
             "location": {
                 "latitude": latitude,
                 "longitude": longitude,
@@ -755,6 +929,7 @@ DO NOT:
 
         # If no tool required, treat first call answer as direct non-stream output.
         if not tools_to_call:
+            logger.info("Chat tool planner: no tool calls selected, using direct first-LLM response")
             metadata_chunk["mode"] = "direct"
             yield metadata_chunk
             yield {
@@ -771,6 +946,7 @@ DO NOT:
         for tool_call in tools_to_call:
             if isinstance(tool_call, tuple):
                 tool_name, obj_name = tool_call
+                logger.info("Executing MCP tool: %s object=%s", tool_name, obj_name)
                 try:
                     if tool_name == "object_position":
                         result = await call_mcp_tool(
@@ -788,9 +964,12 @@ DO NOT:
                         )
                     tool_results += f"\n{tool_name} ({obj_name}):\n{json.dumps(result, indent=2)}\n"
                     tools_called += 1
+                    logger.info("MCP tool success: %s object=%s", tool_name, obj_name)
                 except Exception as e:
                     tool_results += f"\n{tool_name} Error: {str(e)}\n"
+                    logger.exception("MCP tool failed: %s object=%s", tool_name, obj_name)
             else:
+                logger.info("Executing MCP tool: %s", tool_call)
                 try:
                     result = await call_mcp_tool(
                         "visible_objects",
@@ -811,11 +990,14 @@ DO NOT:
 
                     tool_results += f"\nvisible_objects:\n{json.dumps(result_list, indent=2)}\n"
                     tools_called += 1
+                    logger.info("MCP tool success: visible_objects count=%s", len(result_list))
                 except Exception as e:
                     tool_results += f"\nvisible_objects Error: {str(e)}\n"
+                    logger.exception("MCP tool failed: visible_objects")
 
         metadata_chunk["tools_called"] = tools_called
         metadata_chunk["mode"] = "stream"
+        logger.info("Chat tool execution complete: tools_called=%s", tools_called)
         yield metadata_chunk
 
         second_system_prompt = """You are an expert stargazing guide having a natural conversation with someone interested in the night sky.
@@ -851,6 +1033,7 @@ Please answer their question naturally, using the tool results above."""
         ]
 
         streaming_llm_final = get_streaming_llm()
+        logger.info("Starting streamed final response generation")
         async for chunk in streaming_llm_final.astream(second_messages):
             content_piece = chunk.content if hasattr(chunk, "content") else ""
             if content_piece:
@@ -864,8 +1047,10 @@ Please answer their question naturally, using the tool results above."""
             "success": True,
             "mode": "stream",
         }
+        logger.info("Completed streamed final response generation")
 
     except Exception as e:
+        logger.exception("Chat streaming failed")
         yield {
             "type": "error",
             "success": False,
