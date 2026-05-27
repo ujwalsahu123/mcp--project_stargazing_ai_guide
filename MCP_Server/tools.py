@@ -408,7 +408,7 @@ def get_object_detail(object_name):
 # TOOL 4: GET WEATHER FORECAST
 # -------------------------
 
-OPENWEATHER_API_KEY = os.getenv("STARGUIDE_OPENWEATHER_API_KEY", "[REDACTED]")
+OPENWEATHER_API_KEY = os.getenv("STARGUIDE_OPENWEATHER_API_KEY")
 
 
 def _parse_iso_time(value):

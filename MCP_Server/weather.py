@@ -17,7 +17,7 @@ from urllib.parse import urlencode
 from urllib.request import urlopen
 
 
-API_KEY = os.getenv("STARGUIDE_OPENWEATHER_API_KEY", "[REDACTED]")
+API_KEY = os.getenv("STARGUIDE_OPENWEATHER_API_KEY")
 LATITUDE = 28.6139
 LONGITUDE = 77.2090
 OBSERVATION_TIME = "2026-05-27T15:00:00Z"
