@@ -1,6 +1,8 @@
 """
 Simple MCP Server Check - Test MCP Server connection and tools working or not.
-run -> uv run python main.py
+run -> 
+.venv/scripts/activate  # Activate virtual environment
+uv run python test1.py
 """
 
 import httpx
