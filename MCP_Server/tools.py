@@ -370,7 +370,7 @@ def get_object_position(object_name, lat, lon, time=None, alti=0):
         if alt is not None:
             alt = round(float(alt), 4)
             az = round(float(az), 4)
-            return {"alt": alt, "az": az}
+            return {"name": name, "alt": alt, "az": az}
 
     # Star
     ra, dec = get_ra_dec(object_name)
@@ -379,7 +379,7 @@ def get_object_position(object_name, lat, lon, time=None, alti=0):
         if alt is not None:
             alt = round(float(alt), 4)
             az = round(float(az), 4)
-            return {"alt": alt, "az": az}
+            return {"name": name, "alt": alt, "az": az}
 
     return {"error": f"Object '{object_name}' not found or not visible"}
 

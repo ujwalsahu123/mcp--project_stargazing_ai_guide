@@ -23,7 +23,7 @@ EXAMPLE_TIME = "2026-05-27T20:34:44+05:30"
 EXAMPLE_ALTI = -52        # meters
 EXAMPLE_STAR = "Sirius"
 
-# MCP Server URL
+# MCP Server URL & API key
 MCP_SERVER_URL = os.getenv("STARGUIDE_MCP_SERVER_URL")
 API_KEY = os.getenv("STARGUIDE_API_KEY")
 
@@ -151,20 +151,7 @@ async def check_mcp_server():
         )
         print("✓ Success! (tool: weather_forecast)")
 
-        # `weather_result` is a flat mapping: time_string -> "MAIN, description"
-        if isinstance(weather_result, dict):
-            items = list(weather_result.items())
-            if items:
-                curr_key, curr_val = items[0]
-                print(f"Current time: {curr_key}\nSummary: {curr_val}\n")
-                if len(items) > 1:
-                    print("Forecast (starting entries):")
-                    for k, v in items[1:]:
-                        print(f" - {k}: {v}")
-            else:
-                print("Weather: (empty mapping)")
-        else:
-            print(f"Weather:\n{json.dumps(weather_result, indent=2)}\n")
+        print(f"Weather:\n{json.dumps(weather_result, indent=2)}\n")
         
         print("="*70)
         print("✓ All tests completed successfully!")

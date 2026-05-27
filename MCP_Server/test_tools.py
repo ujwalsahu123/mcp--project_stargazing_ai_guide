@@ -71,7 +71,7 @@ try:
         print(f"Status: FAILED - {result['error']}")
     else:
         print(f"Status: SUCCESS")
-        print(f"Object: Mars")
+        print(f"Object: {result['name']}")
         print(f"Altitude: {result['alt']:.2f}°")
         print(f"Azimuth: {result['az']:.2f}°")
 except Exception as e:

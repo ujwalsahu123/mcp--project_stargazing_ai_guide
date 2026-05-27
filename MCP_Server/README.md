@@ -7,7 +7,7 @@ It exposes 5 tools:
 2. `object_position` - altitude/azimuth for a specific object
 3. `object_detail` - static object details from `star_info.json`
 4. `health_check` - simple no-input status check
-5. `weather_forecast` - current weather + next 6 hours forecast
+5. `weather_forecast` - current weather + forecast
 
 Deployed endpoint:
 `https://MCP-Project-Stargazing.fastmcp.app/mcp`
@@ -88,6 +88,7 @@ Output shape (example):
 
 ```json
 {
+  "name": "mars",
   "alt": 47.9604,
   "az": 267.7496
 }
@@ -136,37 +137,27 @@ Input shape:
 {
   "lat": 28.6139,
   "lon": 77.2090,
-  "time": "2026-05-27T15:00:00Z"
 }
 ```
 
 Weather Output Shape
 
+The `weather_forecast` tool returns a flat mapping of time strings to a short summary string in the format "MAIN, description".
+
+- The first entry is the current weather time (formatted as `YYYY-MM-DD HH:MM:SS`, UTC).
+- Following entries are the starting 6 forecast items (use OpenWeather `dt_txt` when available, format `YYYY-MM-DD HH:MM:SS`).
+
+Example return value (Python dict / JSON object):
 
 ```json
 {
-  "target_time": "2026-05-27T15:00:00Z",
-  "location": {
-    "name": "Parliament House, Delhi",
-    "country": "IN",
-    "lat": 28.6139,
-    "lon": 77.209
-  },
-  "current_weather": {
-    "time": "2026-05-27 10:34 UTC",
-    "temperature_c": 44.07,
-    "feels_like_c": 41.13,
-    "conditions": "clear sky",
-    "humidity_pct": 10,
-    "wind_speed_mps": 5.14
-  },
-  "next_6h_forecast": [
-    {
-      "time": "2026-05-27 15:00 UTC",
-      "temperature_c": 43.78,
-      "conditions": "clear sky"
-    }
-  ]
+  "2026-05-27 17:07:39": "Clear, clear sky",
+  "2026-05-27 18:00:00": "Clear, clear sky",
+  "2026-05-27 21:00:00": "Clear, clear sky",
+  "2026-05-28 00:00:00": "Clouds, few clouds",
+  "2026-05-28 03:00:00": "Clouds, overcast clouds",
+  "2026-05-28 06:00:00": "Clouds, broken clouds",
+  "2026-05-28 09:00:00": "Clouds, scattered clouds"
 }
 ```
 
@@ -184,7 +175,4 @@ Weather Output Shape
 - `weather.py`: standalone weather script
 - `star_info.json`: object detail database
 
-## Notes
 
-- Time should be ISO format (example: `2026-05-27T15:00:00Z`).
-- If weather returns auth error, check your OpenWeather key in `STARGUIDE_OPENWEATHER_API_KEY`.
