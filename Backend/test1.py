@@ -18,7 +18,7 @@ load_dotenv()
 
 # Example values
 EXAMPLE_LAT = 19.274      # Mumbai
-EXAMPLE_LON = 72.881      # Mumbai 
+EXAMPLE_LON = 72.881     
 EXAMPLE_TIME = "2026-05-27T20:34:44+05:30"  
 EXAMPLE_ALTI = -52        # meters
 EXAMPLE_STAR = "Sirius"
@@ -142,18 +142,29 @@ async def check_mcp_server():
         print("TEST 5: Weather Forecast")
         print("="*70)
         print(f"Location: {EXAMPLE_LAT}°N, {EXAMPLE_LON}°E")
-        print(f"Time: {EXAMPLE_TIME}\n")
 
         # Call the registered MCP tool `weather_forecast` (exposed by the server)
         weather_result = await call_mcp_tool(
             "weather_forecast",
             lat=EXAMPLE_LAT,
-            lon=EXAMPLE_LON,
-            time=EXAMPLE_TIME
+            lon=EXAMPLE_LON
         )
         print("✓ Success! (tool: weather_forecast)")
 
-        print(f"Weather:\n{json.dumps(weather_result, indent=2)}\n")
+        # `weather_result` is a flat mapping: time_string -> "MAIN, description"
+        if isinstance(weather_result, dict):
+            items = list(weather_result.items())
+            if items:
+                curr_key, curr_val = items[0]
+                print(f"Current time: {curr_key}\nSummary: {curr_val}\n")
+                if len(items) > 1:
+                    print("Forecast (starting entries):")
+                    for k, v in items[1:]:
+                        print(f" - {k}: {v}")
+            else:
+                print("Weather: (empty mapping)")
+        else:
+            print(f"Weather:\n{json.dumps(weather_result, indent=2)}\n")
         
         print("="*70)
         print("✓ All tests completed successfully!")

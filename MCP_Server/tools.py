@@ -422,134 +422,117 @@ def health_check():
     Simple no-input health check.
     """
 
-    return {"status": "success"}
+    return "success"
 
 
 # -------------------------
 # TOOL 5: GET WEATHER FORECAST
 # -------------------------
 
-
-
-def _parse_iso_time(value):
-    if isinstance(value, datetime):
-        return value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
-
-    if value is None:
-        return datetime.now(timezone.utc)
-
-    if isinstance(value, str):
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
-
-    raise ValueError("Unsupported time format")
-
-
-def _format_dt_from_unix(timestamp):
-    return datetime.fromtimestamp(int(timestamp), tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-
-
-def _build_forecast_entry(item):
-    return {
-        "time": _format_dt_from_unix(int(item["dt"])),
-        "temperature_c": round(float(item["main"]["temp"]), 3),
-        "conditions": item["weather"][0]["description"],
-    }
-
-
-def _pick_forecast_entry(forecast_items, target_time, hours_ahead):
-    desired_time = target_time + timedelta(hours=hours_ahead)
-    matching_item = None
-    matching_delta = None
-
-    for item in forecast_items:
-        item_dt = datetime.fromtimestamp(int(item["dt"]), tz=timezone.utc)
-        delta = abs((item_dt - desired_time).total_seconds())
-        if matching_delta is None or delta < matching_delta:
-            matching_item = item
-            matching_delta = delta
-
-    return _build_forecast_entry(matching_item) if matching_item else None
-
-
-def _fetch_json(url):
+def _dt_to_iso(unix_ts):
+    """
+    Convert OpenWeather `dt` (unix seconds) to string format: YYYY-MM-DD HH:MM:SS.
+    """
     try:
-        with urlopen(url, timeout=30) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        error_body = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
-        raise RuntimeError(f"OpenWeather request failed with HTTP {exc.code}: {error_body or exc.reason}") from exc
-    except URLError as exc:
-        raise RuntimeError(f"OpenWeather request failed: {exc.reason}") from exc
+        # Use UTC and format without 'T' or 'Z' per user request
+        return datetime.fromtimestamp(int(unix_ts), tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    except Exception as exc:
+        _debug_log(f"_dt_to_iso failed: {exc}")
+        return None
 
 
-def get_weather_forecast(lat, lon, time=None, api_key=None):
+def _fetch_json_url(url):
+    try:
+        with urlopen(url, timeout=15) as resp:
+            return json.load(resp)
+    except HTTPError as e:
+        _debug_log(f"OpenWeather HTTPError: {e}")
+        raise
+    except URLError as e:
+        _debug_log(f"OpenWeather URLError: {e}")
+        raise
+    except Exception as e:
+        _debug_log(f"_fetch_json_url failed: {e}")
+        raise
+
+
+def get_weather_forecast(lat, lon):
     """
-    Returns current weather and the next 6 hours of forecast points (from OpenWeather).
+    Minimal lat/lon-only interface.
+
+    Returns dict with `current_weather` and `forecast_weather` (list).
+  
+    Uses environment variable `STARGUIDE_OPENWEATHER_API_KEY`.
     """
-
-    api_key = api_key or OPENWEATHER_API_KEY
-    target_time = _parse_iso_time(time)
-
-    query = urlencode(
-        {
-            "lat": lat,
-            "lon": lon,
-            "appid": api_key,
-            "units": "metric",
-        }
-    )
-
-    current_url = f"https://api.openweathermap.org/data/2.5/weather?{query}"
-    forecast_url = f"https://api.openweathermap.org/data/2.5/forecast?{query}"
+    if OPENWEATHER_API_KEY is None or OPENWEATHER_API_KEY == "":
+        return {"error": "Missing OpenWeather API key.", "hint": "Set STARGUIDE_OPENWEATHER_API_KEY environment variable."}
 
     try:
-        current_data = _fetch_json(current_url)
-        forecast_data = _fetch_json(forecast_url)
-    except RuntimeError as exc:
-        return {
-            "target_time": target_time.isoformat().replace("+00:00", "Z"),
-            "coordinates": {"lat": lat, "lon": lon},
-            "error": str(exc),
-        }
+        key = OPENWEATHER_API_KEY
+        base_curr = "https://api.openweathermap.org/data/2.5/weather"
+        base_fore = "https://api.openweathermap.org/data/2.5/forecast"
 
-    if current_data.get("cod") not in (200, "200"):
-        raise RuntimeError(f"Current weather request failed: {current_data}")
-    if forecast_data.get("cod") not in (200, "200"):
-        raise RuntimeError(f"Forecast request failed: {forecast_data}")
+        curr_q = urlencode({"lat": lat, "lon": lon, "units": "metric", "appid": key})
+        fore_q = urlencode({"lat": lat, "lon": lon, "units": "metric", "appid": key})
 
-    current_weather = {
-        "time": _format_dt_from_unix(current_data.get("dt", 0)),
-        "temperature_c": round(float(current_data["main"]["temp"]), 3),
-        "feels_like_c": round(float(current_data["main"]["feels_like"]), 3),
-        "conditions": current_data["weather"][0]["description"],
-        "humidity_pct": int(current_data["main"]["humidity"]),
-        "wind_speed_mps": round(float(current_data.get("wind", {}).get("speed", 0.0)), 3),
-    }
+        curr_url = f"{base_curr}?{curr_q}"
+        fore_url = f"{base_fore}?{fore_q}"
 
-    forecast_items = []
-    for item in forecast_data.get("list", []):
-        item_dt = datetime.fromtimestamp(int(item["dt"]), tz=timezone.utc)
-        delta_hours = (item_dt - target_time).total_seconds() / 3600.0
-        if 0 <= delta_hours <= 6:
-            forecast_items.append(
-                {
-                    "time": _format_dt_from_unix(int(item["dt"])),
-                    "temperature_c": round(float(item["main"]["temp"]), 3),
-                    "conditions": item["weather"][0]["description"],
-                }
-            )
+        current_json = _fetch_json_url(curr_url)
+        forecast_json = _fetch_json_url(fore_url)
 
-    return {
-        "target_time": target_time.isoformat().replace("+00:00", "Z"),
-        "location": {
-            "name": current_data.get("name"),
-            "country": current_data.get("sys", {}).get("country"),
-            "lat": round(float(lat), 4),
-            "lon": round(float(lon), 4),
-        },
-        "current_weather": current_weather,
-        "next_6h_forecast": forecast_items,   # OpenWeather forecast only gives future points from "now", so if you give old date/time then 6hr forecast will be empty.
-    }
+        # Build the simple mapping the user requested: time_string -> "MAIN, description"
+        weather_map = {}
+
+        # Current weather: use dt -> ISO converter
+        curr_dt = current_json.get("dt")
+        curr_time = _dt_to_iso(curr_dt) if curr_dt is not None else None
+        weather0 = None
+        if "weather" in current_json and isinstance(current_json["weather"], list) and current_json["weather"]:
+            weather0 = current_json["weather"][0]
+
+        curr_main = weather0.get("main") if weather0 else None
+        curr_desc = weather0.get("description") if weather0 else None
+
+        if curr_time:
+            weather_map[curr_time] = f"{curr_main}, {curr_desc}" if (curr_main or curr_desc) else None
+        else:
+            # Fallback to raw dt integer string
+            weather_map[str(curr_dt)] = f"{curr_main}, {curr_desc}" if (curr_main or curr_desc) else None
+
+        # Forecast: pick starting 6 entries from forecast['list'] and use dt_txt when available
+        forecast_list = []
+        if isinstance(forecast_json, dict):
+            forecast_list = forecast_json.get("list", []) or []
+
+        count = 0
+        for item in forecast_list:
+            if count >= 6:
+                break
+            dt_txt = item.get("dt_txt")
+            if not dt_txt:
+                try:
+                    dt_txt = _dt_to_iso(int(item.get("dt")))
+                except Exception:
+                    continue
+
+            weather_i = None
+            if "weather" in item and isinstance(item["weather"], list) and item["weather"]:
+                weather_i = item["weather"][0]
+
+            main = weather_i.get("main") if weather_i else None
+            desc = weather_i.get("description") if weather_i else None
+
+            weather_map[dt_txt] = f"{main}, {desc}" if (main or desc) else None
+            count += 1
+
+        return weather_map
+
+    except HTTPError as e:
+        return {"error": "HTTP error when contacting OpenWeather.", "hint": str(e)}
+    except URLError as e:
+        return {"error": "Network error when contacting OpenWeather.", "hint": str(e)}
+    except Exception as exc:
+        _debug_log(f"get_weather_forecast failed: {exc}")
+        return {"error": "Failed to fetch weather data.", "hint": str(exc)}
+

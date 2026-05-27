@@ -58,6 +58,10 @@ Available MCP tools:
 - visible_objects
 - object_position
 - object_detail
+- health_check
+- weather_forecast (lat, lon)
+
+
 
 ## Full Request Flow
 

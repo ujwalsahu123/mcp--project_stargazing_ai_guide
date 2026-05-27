@@ -112,13 +112,14 @@ def health_check():
 # TOOL 5: get_weather_forecast
 # -------------------------
 @mcp.tool()
-def weather_forecast(lat: float, lon: float, time: str = None):
+def weather_forecast(lat: float, lon: float):
     """
-    Get current weather and next 6 hours forecast for a location.
+    Get current weather and forecast for a location.
+
     """
 
     try:
-        result = get_weather_forecast(lat=lat, lon=lon, time=time)
+        result = get_weather_forecast(lat=lat, lon=lon)
         return result
 
     except Exception as e:

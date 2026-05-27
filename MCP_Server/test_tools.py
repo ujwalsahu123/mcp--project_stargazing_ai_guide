@@ -100,7 +100,7 @@ print("\n[TOOL 4] health_check()")
 print("-"*60)
 try:
     result = health_check()
-    print("Status: SUCCESS")
+    # print("Status: SUCCESS")
     print(result)
 except Exception as e:
     print(f"Status: FAILED - {e}")
@@ -111,18 +111,9 @@ except Exception as e:
 print("\n[TOOL 5] get_weather_forecast()")
 print("-"*60)
 try:
-    result = get_weather_forecast(
-        lat=28.6139,
-        lon=77.2090,
-        time="2026-05-27T15:00:00Z",
-    )
-    if "error" in result:
-        print(f"Status: FAILED - {result['error']}")
-        if "hint" in result:
-            print(f"Hint: {result['hint']}")
-    else:
-        print("Status: SUCCESS")
-        print(result)
+    result = get_weather_forecast(TEST_LAT, TEST_LON)
+
+    print(result)
         
 except Exception as e:
     print(f"Status: FAILED - {e}")
