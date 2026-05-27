@@ -5,6 +5,11 @@ for a hardcoded location/time.
 
 The API key can come from STARGUIDE_OPENWEATHER_API_KEY or the fallback
 constant below.
+
+cd MCP_Server
+.venv/scripts/activate # Activate virtual environment
+uv run python weather.py
+
 """
 
 from __future__ import annotations
@@ -15,6 +20,11 @@ from urllib.error import HTTPError, URLError
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 from urllib.request import urlopen
+
+from dotenv import load_dotenv
+
+
+load_dotenv()
 
 
 API_KEY = os.getenv("STARGUIDE_OPENWEATHER_API_KEY")

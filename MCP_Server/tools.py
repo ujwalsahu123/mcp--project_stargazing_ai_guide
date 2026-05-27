@@ -8,7 +8,7 @@ from astroquery.vizier import Vizier
 import json
 import math
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -18,6 +18,10 @@ from urllib.request import urlopen
 # -------------------------
 # LOAD DATA ONCE
 # -------------------------
+
+from dotenv import load_dotenv
+load_dotenv()
+
 
 BASE_DIR = Path(__file__).resolve().parent
 SKYFIELD_DATA_DIR = Path(os.getenv("STARGUIDE_SKYFIELD_DATA_DIR", BASE_DIR / "skyfield-data"))
@@ -363,6 +367,8 @@ def get_object_position(object_name, lat, lon, time=None, alti=0):
     if name in SOLAR_SYSTEM_MAP:
         alt, az = calculate_solar_system_alt_az(name, lat, lon, alti, time_input=time)
         if alt is not None:
+            alt = round(float(alt), 4)
+            az = round(float(az), 4)
             return {"alt": alt, "az": az}
 
     # Star
@@ -370,6 +376,8 @@ def get_object_position(object_name, lat, lon, time=None, alti=0):
     if ra is not None:
         alt, az = calculate_star_alt_az(ra, dec, lat, lon, alti, time_input=time)
         if alt is not None:
+            alt = round(float(alt), 4)
+            az = round(float(az), 4)
             return {"alt": alt, "az": az}
 
     return {"error": f"Object '{object_name}' not found or not visible"}
@@ -431,6 +439,29 @@ def _format_dt_from_unix(timestamp):
     return datetime.fromtimestamp(int(timestamp), tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
+def _build_forecast_entry(item):
+    return {
+        "time": _format_dt_from_unix(int(item["dt"])),
+        "temperature_c": round(float(item["main"]["temp"]), 3),
+        "conditions": item["weather"][0]["description"],
+    }
+
+
+def _pick_forecast_entry(forecast_items, target_time, hours_ahead):
+    desired_time = target_time + timedelta(hours=hours_ahead)
+    matching_item = None
+    matching_delta = None
+
+    for item in forecast_items:
+        item_dt = datetime.fromtimestamp(int(item["dt"]), tz=timezone.utc)
+        delta = abs((item_dt - desired_time).total_seconds())
+        if matching_delta is None or delta < matching_delta:
+            matching_item = item
+            matching_delta = delta
+
+    return _build_forecast_entry(matching_item) if matching_item else None
+
+
 def _fetch_json(url):
     try:
         with urlopen(url, timeout=30) as response:
@@ -444,7 +475,7 @@ def _fetch_json(url):
 
 def get_weather_forecast(lat, lon, time=None, api_key=None):
     """
-    Returns current weather and the next 6 hours forecast from OpenWeather.
+    Returns current weather plus the closest 3-hour and 6-hour forecast points.
     """
 
     api_key = api_key or OPENWEATHER_API_KEY
@@ -470,7 +501,6 @@ def get_weather_forecast(lat, lon, time=None, api_key=None):
             "target_time": target_time.isoformat().replace("+00:00", "Z"),
             "coordinates": {"lat": lat, "lon": lon},
             "error": str(exc),
-            "hint": "Check that the OpenWeather API key is valid and activated, or set STARGUIDE_OPENWEATHER_API_KEY in your environment.",
         }
 
     if current_data.get("cod") not in (200, "200"):
@@ -487,18 +517,9 @@ def get_weather_forecast(lat, lon, time=None, api_key=None):
         "wind_speed_mps": round(float(current_data.get("wind", {}).get("speed", 0.0)), 3),
     }
 
-    forecast_items = []
-    for item in forecast_data.get("list", []):
-        item_dt = datetime.fromtimestamp(int(item["dt"]), tz=timezone.utc)
-        delta_hours = (item_dt - target_time).total_seconds() / 3600.0
-        if 0 <= delta_hours <= 6:
-            forecast_items.append(
-                {
-                    "time": _format_dt_from_unix(item["dt"]),
-                    "temperature_c": round(float(item["main"]["temp"]), 3),
-                    "conditions": item["weather"][0]["description"],
-                }
-            )
+    forecast_items = forecast_data.get("list", [])
+    next_3_hr_forecast = _pick_forecast_entry(forecast_items, target_time, 3)
+    next_6_hr_forecast = _pick_forecast_entry(forecast_items, target_time, 6)
 
     return {
         "target_time": target_time.isoformat().replace("+00:00", "Z"),
@@ -509,5 +530,6 @@ def get_weather_forecast(lat, lon, time=None, api_key=None):
             "lon": round(float(lon), 4),
         },
         "current_weather": current_weather,
-        "next_6h_forecast": forecast_items,
+        "next_3_hr_forecast": next_3_hr_forecast,
+        "next_6_hr_forecast": next_6_hr_forecast,
     }

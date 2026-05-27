@@ -1,8 +1,9 @@
 """
 Here we simply check if the tools of the tools.py are working or not. 
 run -> 
-`.venv/scripts/activate` # Activate virtual environment
-`uv run python test.py`
+cd MCP_Server
+.venv/scripts/activate # Activate virtual environment
+uv run python test.py
 """
 
 import json
