@@ -1,9 +1,9 @@
 """
 MCP Server Check - Test MCP Server connection and tools working or not.
 
-run -> 
+run ->
 cd Backend
-.venv/scripts/activate  # Activate virtual environment
+.venv/scripts/activate    # Activate virtual environment
 uv run python test1.py
 """
 
@@ -13,8 +13,10 @@ import os
 import json
 import asyncio
 
+
 # Load environment variables
 load_dotenv()
+
 
 # Example values
 EXAMPLE_LAT = 19.274      # Mumbai
@@ -22,6 +24,7 @@ EXAMPLE_LON = 72.881
 EXAMPLE_TIME = "2026-05-27T20:34:44+05:30"  
 EXAMPLE_ALTI = -52        # meters
 EXAMPLE_STAR = "Sirius"
+
 
 # MCP Server URL & API key
 MCP_SERVER_URL = os.getenv("STARGUIDE_MCP_SERVER_URL")
@@ -63,105 +66,118 @@ async def call_mcp_tool(tool_name: str, **kwargs) -> dict:
         return parse_sse_response(response.text)
 
 
+async def test_visible_objects():
+    print("\n" + "=" * 70)
+    print("TEST 1: Visible Objects")
+    print("=" * 70)
+    print(f"Location: {EXAMPLE_LAT}°N, {EXAMPLE_LON}°E")
+    print(f"Time: {EXAMPLE_TIME}")
+    print(f"Altitude: {EXAMPLE_ALTI}m\n")
+
+    result = await call_mcp_tool(
+        "visible_objects",
+        lat=EXAMPLE_LAT,
+        lon=EXAMPLE_LON,
+        time=EXAMPLE_TIME,
+        alti=EXAMPLE_ALTI,
+    )
+    print("✓ Success!")
+    print(f"Objects found:\n{json.dumps(result, indent=2)}\n")
+
+
+async def test_object_position():
+    print("=" * 70)
+    print("TEST 2: Object Position (Mars)")
+    print("=" * 70)
+    print("Object: Mars")
+    print(f"Location: {EXAMPLE_LAT}°N, {EXAMPLE_LON}°E")
+    print(f"Time: {EXAMPLE_TIME}\n")
+
+    result = await call_mcp_tool(
+        "object_position",
+        object_name="Mars",
+        lat=EXAMPLE_LAT,
+        lon=EXAMPLE_LON,
+        time=EXAMPLE_TIME,
+        alti=EXAMPLE_ALTI,
+    )
+    print("✓ Success!")
+    print(f"Position:\n{json.dumps(result, indent=2)}\n")
+
+
+async def test_object_detail():
+    print("=" * 70)
+    print("TEST 3: Object Details")
+    print("=" * 70)
+    print(f"Object: {EXAMPLE_STAR}\n")
+
+    result = await call_mcp_tool(
+        "object_detail",
+        object_name=EXAMPLE_STAR,
+    )
+    print("✓ Success!")
+    print(f"Details:\n{json.dumps(result, indent=2)}\n")
+
+
+async def test_health_check():
+    print("=" * 70)
+    print("TEST 4: Health Check")
+    print("=" * 70)
+
+    result = await call_mcp_tool("health_check")
+    print("✓ Success!")
+    print(f"Health:\n{json.dumps(result, indent=2)}\n")
+
+
+async def test_weather_forecast():
+    print("=" * 70)
+    print("TEST 5: Weather Forecast")
+    print("=" * 70)
+    print(f"Location: {EXAMPLE_LAT}°N, {EXAMPLE_LON}°E")
+
+    result = await call_mcp_tool(
+        "weather_forecast",
+        lat=EXAMPLE_LAT,
+        lon=EXAMPLE_LON,
+    )
+    print("✓ Success! (tool: weather_forecast)")
+    print(f"Weather:\n{json.dumps(result, indent=2)}\n")
+
+
 async def check_mcp_server():
     """Check if MCP Server is working and print tool outputs."""
-    
-    print("\n" + "="*70)
+
+    print("\n" + "=" * 70)
     print("  MCP Server Status Check")
-    print("="*70)
+    print("=" * 70)
     print(f"Server URL: {MCP_SERVER_URL}")
     print(f"API Key: {API_KEY[:20]}..." if API_KEY else "❌ NO API KEY")
-    
+
     if not API_KEY:
         print("\n❌ Error: STARGUIDE_API_KEY not set in .env")
         return
-    
+
     try:
         print("\n🔗 Connecting to StarGuide MCP Server...")
-        
-        # Test Tool 1: visible_objects
-        print("\n" + "="*70)
-        print("TEST 1: Visible Objects")
-        print("="*70)
-        print(f"Location: {EXAMPLE_LAT}°N, {EXAMPLE_LON}°E")
-        print(f"Time: {EXAMPLE_TIME}")
-        print(f"Altitude: {EXAMPLE_ALTI}m\n")
-        
-        result1 = await call_mcp_tool(
-            "visible_objects",
-            lat=EXAMPLE_LAT,
-            lon=EXAMPLE_LON,
-            time=EXAMPLE_TIME,
-            alti=EXAMPLE_ALTI
-        )
-        print("✓ Success!")
-        print(f"Objects found:\n{json.dumps(result1, indent=2)}\n")
-        
-        # Test Tool 2: object_position
-        print("="*70)
-        print("TEST 2: Object Position (Mars)")
-        print("="*70)
-        print(f"Object: Mars")
-        print(f"Location: {EXAMPLE_LAT}°N, {EXAMPLE_LON}°E")
-        print(f"Time: {EXAMPLE_TIME}\n")
-        
-        result2 = await call_mcp_tool(
-            "object_position",
-            object_name="Mars",
-            lat=EXAMPLE_LAT,
-            lon=EXAMPLE_LON,
-            time=EXAMPLE_TIME,
-            alti=EXAMPLE_ALTI
-        )
-        print("✓ Success!")
-        print(f"Position:\n{json.dumps(result2, indent=2)}\n")
-        
-        # Test Tool 3: object_detail
-        print("="*70)
-        print("TEST 3: Object Details")
-        print("="*70)
-        print(f"Object: {EXAMPLE_STAR}\n")
-        
-        result3 = await call_mcp_tool(
-            "object_detail",
-            object_name=EXAMPLE_STAR
-        )
-        print("✓ Success!")
-        print(f"Details:\n{json.dumps(result3, indent=2)}\n")
+        await test_visible_objects()
+        await test_object_position()
+        await test_object_detail()
+        await test_health_check()
+        await test_weather_forecast()
 
-        # Test Tool 4: health check
-        print("="*70)
-        print("TEST 4: Health Check")
-        print("="*70)
-        result4 = await call_mcp_tool("health_check")
-        print("✓ Success!")
-        print(f"Health:\n{json.dumps(result4, indent=2)}\n")
-
-        # Test Tool 5: weather
-        print("="*70)
-        print("TEST 5: Weather Forecast")
-        print("="*70)
-        print(f"Location: {EXAMPLE_LAT}°N, {EXAMPLE_LON}°E")
-
-        # Call the registered MCP tool `weather_forecast` (exposed by the server)
-        weather_result = await call_mcp_tool(
-            "weather_forecast",
-            lat=EXAMPLE_LAT,
-            lon=EXAMPLE_LON
-        )
-        print("✓ Success! (tool: weather_forecast)")
-
-        print(f"Weather:\n{json.dumps(weather_result, indent=2)}\n")
-        
-        print("="*70)
+        print("=" * 70)
         print("✓ All tests completed successfully!")
-        print("="*70)
-        
+        print("=" * 70)
+
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
         traceback.print_exc()
 
 
+async def main():
+    await check_mcp_server()
+
+
 if __name__ == "__main__":
-    asyncio.run(check_mcp_server())
+    asyncio.run(main())
