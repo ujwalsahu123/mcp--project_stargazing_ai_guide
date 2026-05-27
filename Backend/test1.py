@@ -1,5 +1,6 @@
 """
-Simple MCP Server Check - Test MCP Server connection and tools working or not.
+MCP Server Check - Test MCP Server connection and tools working or not.
+
 run -> 
 cd Backend
 .venv/scripts/activate  # Activate virtual environment
@@ -21,7 +22,6 @@ EXAMPLE_LON = 72.881      # Mumbai
 EXAMPLE_TIME = "2026-04-20T20:30:00+05:30"
 EXAMPLE_ALTI = -52        # meters
 EXAMPLE_STAR = "Sirius"
-EXAMPLE_WEATHER_TIME = "2026-04-20T20:30:00+05:30"
 
 # MCP Server URL
 MCP_SERVER_URL = os.getenv("STARGUIDE_MCP_SERVER_URL")
@@ -134,14 +134,14 @@ async def check_mcp_server():
         print("TEST 4: Weather Forecast")
         print("="*70)
         print(f"Location: {EXAMPLE_LAT}°N, {EXAMPLE_LON}°E")
-        print(f"Time: {EXAMPLE_WEATHER_TIME}\n")
+        print(f"Time: {EXAMPLE_TIME}\n")
 
         # Call the registered MCP tool `weather_forecast` (exposed by the server)
         weather_result = await call_mcp_tool(
             "weather_forecast",
             lat=EXAMPLE_LAT,
             lon=EXAMPLE_LON,
-            time=EXAMPLE_WEATHER_TIME
+            time=EXAMPLE_TIME
         )
         print("✓ Success! (tool: weather_forecast)")
 

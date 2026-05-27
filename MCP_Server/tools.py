@@ -26,6 +26,7 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent
 SKYFIELD_DATA_DIR = Path(os.getenv("STARGUIDE_SKYFIELD_DATA_DIR", BASE_DIR / "skyfield-data"))
 DEBUG_MODE = os.getenv("STARGUIDE_DEBUG", "0") == "1"
+OPENWEATHER_API_KEY = os.getenv("STARGUIDE_OPENWEATHER_API_KEY")
 
 
 def _debug_log(message):
@@ -416,7 +417,6 @@ def get_object_detail(object_name):
 # TOOL 4: GET WEATHER FORECAST
 # -------------------------
 
-OPENWEATHER_API_KEY = os.getenv("STARGUIDE_OPENWEATHER_API_KEY")
 
 
 def _parse_iso_time(value):
@@ -475,7 +475,7 @@ def _fetch_json(url):
 
 def get_weather_forecast(lat, lon, time=None, api_key=None):
     """
-    Returns current weather plus the closest 3-hour and 6-hour forecast points.
+    Returns current weather and the next 6 hours of forecast points (from OpenWeather).
     """
 
     api_key = api_key or OPENWEATHER_API_KEY
@@ -517,9 +517,18 @@ def get_weather_forecast(lat, lon, time=None, api_key=None):
         "wind_speed_mps": round(float(current_data.get("wind", {}).get("speed", 0.0)), 3),
     }
 
-    forecast_items = forecast_data.get("list", [])
-    next_3_hr_forecast = _pick_forecast_entry(forecast_items, target_time, 3)
-    next_6_hr_forecast = _pick_forecast_entry(forecast_items, target_time, 6)
+    forecast_items = []
+    for item in forecast_data.get("list", []):
+        item_dt = datetime.fromtimestamp(int(item["dt"]), tz=timezone.utc)
+        delta_hours = (item_dt - target_time).total_seconds() / 3600.0
+        if 0 <= delta_hours <= 6:
+            forecast_items.append(
+                {
+                    "time": _format_dt_from_unix(int(item["dt"])),
+                    "temperature_c": round(float(item["main"]["temp"]), 3),
+                    "conditions": item["weather"][0]["description"],
+                }
+            )
 
     return {
         "target_time": target_time.isoformat().replace("+00:00", "Z"),
@@ -530,6 +539,5 @@ def get_weather_forecast(lat, lon, time=None, api_key=None):
             "lon": round(float(lon), 4),
         },
         "current_weather": current_weather,
-        "next_3_hr_forecast": next_3_hr_forecast,
-        "next_6_hr_forecast": next_6_hr_forecast,
+        "next_6h_forecast": forecast_items,
     }

@@ -1,5 +1,6 @@
 """
-Here we simply check if the tools of the tools.py are working or not. 
+check if the tools of the tools.py are working or not. 
+
 run -> 
 cd MCP_Server
 .venv/scripts/activate # Activate virtual environment
