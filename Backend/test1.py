@@ -18,8 +18,8 @@ load_dotenv()
 
 # Example values
 EXAMPLE_LAT = 19.274      # Mumbai
-EXAMPLE_LON = 72.881      # Mumbai
-EXAMPLE_TIME = "2026-04-20T20:30:00+05:30"
+EXAMPLE_LON = 72.881      # Mumbai 
+EXAMPLE_TIME = "2026-05-27T20:34:44+05:30"  
 EXAMPLE_ALTI = -52        # meters
 EXAMPLE_STAR = "Sirius"
 
@@ -129,9 +129,17 @@ async def check_mcp_server():
         print("✓ Success!")
         print(f"Details:\n{json.dumps(result3, indent=2)}\n")
 
-        # Test Tool 4: weather
+        # Test Tool 4: health check
         print("="*70)
-        print("TEST 4: Weather Forecast")
+        print("TEST 4: Health Check")
+        print("="*70)
+        result4 = await call_mcp_tool("health_check")
+        print("✓ Success!")
+        print(f"Health:\n{json.dumps(result4, indent=2)}\n")
+
+        # Test Tool 5: weather
+        print("="*70)
+        print("TEST 5: Weather Forecast")
         print("="*70)
         print(f"Location: {EXAMPLE_LAT}°N, {EXAMPLE_LON}°E")
         print(f"Time: {EXAMPLE_TIME}\n")
@@ -145,8 +153,7 @@ async def check_mcp_server():
         )
         print("✓ Success! (tool: weather_forecast)")
 
-        print(weather_result)
-        # print(f"Weather:\n{json.dumps(weather_result, indent=2)}\n")
+        print(f"Weather:\n{json.dumps(weather_result, indent=2)}\n")
         
         print("="*70)
         print("✓ All tests completed successfully!")

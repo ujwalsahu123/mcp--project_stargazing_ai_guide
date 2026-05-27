@@ -13,6 +13,7 @@ from tools import (
     get_visible_objects,
     get_object_position,
     get_object_detail,
+    health_check,
     get_weather_forecast,
 )
 
@@ -93,9 +94,21 @@ except Exception as e:
     print(f"Status: FAILED - {e}")
 
 # ============================================================
-# TOOL 4: get_weather_forecast
+# TOOL 4: health_check
 # ============================================================
-print("\n[TOOL 4] get_weather_forecast()")
+print("\n[TOOL 4] health_check()")
+print("-"*60)
+try:
+    result = health_check()
+    print("Status: SUCCESS")
+    print(result)
+except Exception as e:
+    print(f"Status: FAILED - {e}")
+
+# ============================================================
+# TOOL 5: get_weather_forecast
+# ============================================================
+print("\n[TOOL 5] get_weather_forecast()")
 print("-"*60)
 try:
     result = get_weather_forecast(

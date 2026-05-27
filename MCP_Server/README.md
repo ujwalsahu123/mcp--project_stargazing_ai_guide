@@ -2,11 +2,12 @@
 
 MCP server for stargazing + weather.
 
-It exposes 4 tools:
+It exposes 5 tools:
 1. `visible_objects` - visible celestial objects sorted by brightness
 2. `object_position` - altitude/azimuth for a specific object
 3. `object_detail` - static object details from `star_info.json`
-4. `weather_forecast` - current weather + next 6 hours forecast
+4. `health_check` - simple no-input status check
+5. `weather_forecast` - current weather + next 6 hours forecast
 
 Deployed endpoint:
 `https://MCP-Project-Stargazing.fastmcp.app/mcp`
@@ -112,6 +113,18 @@ Output (example):
   "constellation": "Varies",
   "description": "The red planet, known for its iron-rich dusty surface.",
   "mythology": "Named after the Roman god of war."
+}
+```
+
+### `health_check`
+
+No input.
+
+Output (example):
+
+```json
+{
+  "status": "success"
 }
 ```
 

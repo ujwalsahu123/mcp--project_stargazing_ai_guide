@@ -16,6 +16,7 @@ from tools import (
     get_visible_objects,
     get_object_position,
     get_object_detail,
+    health_check as run_health_check,
     get_weather_forecast
 )
 
@@ -90,7 +91,25 @@ def object_detail(object_name: str):
 
 
 # -------------------------
-# TOOL 4: get_weather_forecast
+# TOOL 4: health_check
+# -------------------------
+@mcp.tool()
+def health_check():
+    """
+    Simple no-input health check.
+    """
+
+    try:
+        return run_health_check()
+
+    except Exception as e:
+        return {
+            "error": f"Failed health check: {str(e)}"
+        }
+
+
+# -------------------------
+# TOOL 5: get_weather_forecast
 # -------------------------
 @mcp.tool()
 def weather_forecast(lat: float, lon: float, time: str = None):

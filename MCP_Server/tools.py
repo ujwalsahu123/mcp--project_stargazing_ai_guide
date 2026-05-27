@@ -414,7 +414,19 @@ def get_object_detail(object_name):
 
 
 # -------------------------
-# TOOL 4: GET WEATHER FORECAST
+# TOOL 4: HEALTH CHECK
+# -------------------------
+
+def health_check():
+    """
+    Simple no-input health check.
+    """
+
+    return {"status": "success"}
+
+
+# -------------------------
+# TOOL 5: GET WEATHER FORECAST
 # -------------------------
 
 
@@ -539,5 +551,5 @@ def get_weather_forecast(lat, lon, time=None, api_key=None):
             "lon": round(float(lon), 4),
         },
         "current_weather": current_weather,
-        "next_6h_forecast": forecast_items,
+        "next_6h_forecast": forecast_items,   # OpenWeather forecast only gives future points from "now", so if you give old date/time then 6hr forecast will be empty.
     }
