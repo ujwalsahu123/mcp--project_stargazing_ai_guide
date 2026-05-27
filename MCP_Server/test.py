@@ -1,6 +1,8 @@
 """
 Here we simply check if the tools of the tools.py are working or not. 
-run -> python test.py
+run -> 
+`.venv/scripts/activate` # Activate virtual environment
+`uv run python test.py`
 """
 
 import json
@@ -9,6 +11,7 @@ from tools import (
     get_visible_objects,
     get_object_position,
     get_object_detail,
+    get_weather_forecast,
 )
 
 # Fix encoding for Windows
@@ -19,7 +22,7 @@ if sys.platform == "win32":
 # Test parameters
 TEST_LAT = 19.274
 TEST_LON = 72.881
-TEST_TIME = "2026-04-20T20:30:00+05:30"
+TEST_TIME = "2026-05-26T13:30:00+05:30"
 TEST_ALTI = -52
 
 print("\n" + "="*60)
@@ -40,7 +43,11 @@ try:
     )
     print(f"Status: SUCCESS")
     print(f"Found {len(result)} visible objects")
-    print(f"Sample: {result[0]['name']} (Mag: {result[0]['magnitude']:.2f})")
+    print(f"Sample: {result} ")
+    # print(f"Sample: {result[1]} ")
+    # print(f"Sample: {result[2]} ")
+
+    
 except Exception as e:
     print(f"Status: FAILED - {e}")
 
@@ -79,9 +86,29 @@ try:
     else:
         print(f"Status: SUCCESS")
         print(f"Object: Mars")
-        print(f"Type: {result.get('type', 'N/A')}")
-        print(f"Distance: {result.get('distance', 'N/A')}")
-        print(f"Constellation: {result.get('constellation', 'N/A')}")
+        print(f"{result}")
+except Exception as e:
+    print(f"Status: FAILED - {e}")
+
+# ============================================================
+# TOOL 4: get_weather_forecast
+# ============================================================
+print("\n[TOOL 4] get_weather_forecast()")
+print("-"*60)
+try:
+    result = get_weather_forecast(
+        lat=28.6139,
+        lon=77.2090,
+        time="2026-05-27T15:00:00Z",
+    )
+    if "error" in result:
+        print(f"Status: FAILED - {result['error']}")
+        if "hint" in result:
+            print(f"Hint: {result['hint']}")
+    else:
+        print("Status: SUCCESS")
+        print(result)
+        
 except Exception as e:
     print(f"Status: FAILED - {e}")
 

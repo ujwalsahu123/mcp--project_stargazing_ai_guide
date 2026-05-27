@@ -6,9 +6,13 @@ from astropy.coordinates import SkyCoord, EarthLocation, AltAz
 from astropy import units as u
 from astroquery.vizier import Vizier
 import json
+import math
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import urlopen
 
 
 # -------------------------
@@ -25,6 +29,7 @@ def _debug_log(message):
         print(f"[tools.py] {message}")
 
 
+# 
 def _load_ephemeris():
     candidate_dirs = [SKYFIELD_DATA_DIR, BASE_DIR.parent.parent / "skyfield-data"]
     last_error = None
@@ -277,31 +282,43 @@ def calculate_star_alt_az(ra, dec, lat, lon, alti, time_input=None):
 # -------------------------
 
 # Returns list of visible objects (alt > 0) sorted by brightness
-# We are not going through each and every star and then filtering by altitude, and then sorting by brightness, and then returning the top 50. 
-# Instead, we are only going through a predefined list of bright stars and planets, which is much more efficient.
+# We are not going through each and every star (millions) and then filtering by altitude, and then sorting by brightness, and then returning the top 50. 
+# Instead, we are only going through a predefined list of bright stars and planets (50 brightest once), which is much more efficient.
+# later instead of top 50 brightest objects , we can search from a larger list of objects and then return top 50 brightest objects. 
+# but for now we are simply calculating the alt-az and brightness of a predefined list of bright objects (top 50) and then sorting them by brightness 
+# and then returning all the objects which are visible (alt > 0) sorted by brightness.
 
+# so later :-
+# Large list of object -> calc the alt az & brightness -> filter by alt > 0 -> sort by brightness -> Now we have a big list of visible objects sorted by brightness -> return top N from that list.
  
 def get_visible_objects(lat, lon, time=None, alti=0):
     """
-    Returns list of visible objects (alt > 0) sorted by brightness (magnitude).
-    Lower magnitude = brighter.
+    Returns list of visible objects (alt > 0) sorted by brightness.
+    Lower magnitude means higher brightness.
     """
 
     visible = []
     skyfield_time, _ = _resolve_observation_times(time)
+
+    def _brightness_from_magnitude(magnitude):
+        try:
+            return math.pow(10, -0.4 * float(magnitude))
+        except Exception:
+            return 0.0
 
     # Solar system objects
     for name in SOLAR_SYSTEM_MAP.keys():
         alt, az = calculate_solar_system_alt_az(name, lat, lon, alti, time_input=time)
         if alt is not None and alt > 0:
             magnitude = get_planet_magnitude(name, skyfield_time)
+            object_type = "star" if name.lower() == "sun" else "planet"
             visible.append({
                 "name": name.capitalize(),
-                "type": "planet",
-                "alt": alt,
-                "az": az,
-                "magnitude": magnitude,
-                "brightness": magnitude
+                "type": object_type,
+                "alt": round(float(alt), 4),
+                "az": round(float(az), 4),
+                "magnitude": round(float(magnitude), 4),
+                "brightness": round(_brightness_from_magnitude(magnitude), 4),
             })
 
     # Stars
@@ -316,17 +333,19 @@ def get_visible_objects(lat, lon, time=None, alti=0):
             visible.append({
                 "name": star,
                 "type": "star",
-                "alt": alt,
-                "az": az,
-                "magnitude": magnitude,
-                "brightness": magnitude
+                "alt": round(float(alt), 4),
+                "az": round(float(az), 4),
+                "magnitude": round(float(magnitude), 4),
+                "brightness": round(_brightness_from_magnitude(magnitude), 6),  # keeping it 6 since some objects have very low brightness and we want to differentiate them in the sorting
             })
 
-    # Sort by brightness (lower magnitude = brighter = first)
-    visible.sort(key=lambda x: x["magnitude"])
+    # Sort by brightness (higher brightness first)
+    visible.sort(key=lambda x: x["brightness"], reverse=True)
 
-    return visible[:50]  # return top 50
-
+    if visible:
+        return visible # return all the visible objects sorted by brightness (we started with 50 but it may not always return 50 since some objects may not be visible alt<0)
+    else:
+        return {"error": "No visible objects found for this location and time."}
 
 # -------------------------
 # TOOL 2: GET OBJECT POSITION
@@ -353,7 +372,7 @@ def get_object_position(object_name, lat, lon, time=None, alti=0):
         if alt is not None:
             return {"alt": alt, "az": az}
 
-    return {"error": "Object not found or not visible"}
+    return {"error": f"Object '{object_name}' not found or not visible"}
 
 
 # -------------------------
@@ -377,9 +396,118 @@ def get_object_detail(object_name):
 
         if result:
             return result
-
-        return {"error": "No data found for this object"}
+        else:
+            return {"error": f"No data found for object '{object_name}'"}
 
     except Exception as exc:
         _debug_log(f"get_object_detail failed: {exc}")
         return {"error": "Failed to load star data"}
+
+
+# -------------------------
+# TOOL 4: GET WEATHER FORECAST
+# -------------------------
+
+OPENWEATHER_API_KEY = os.getenv("STARGUIDE_OPENWEATHER_API_KEY", "[REDACTED]")
+
+
+def _parse_iso_time(value):
+    if isinstance(value, datetime):
+        return value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+    if value is None:
+        return datetime.now(timezone.utc)
+
+    if isinstance(value, str):
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    raise ValueError("Unsupported time format")
+
+
+def _format_dt_from_unix(timestamp):
+    return datetime.fromtimestamp(int(timestamp), tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+
+def _fetch_json(url):
+    try:
+        with urlopen(url, timeout=30) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        error_body = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+        raise RuntimeError(f"OpenWeather request failed with HTTP {exc.code}: {error_body or exc.reason}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"OpenWeather request failed: {exc.reason}") from exc
+
+
+def get_weather_forecast(lat, lon, time=None, api_key=None):
+    """
+    Returns current weather and the next 6 hours forecast from OpenWeather.
+    """
+
+    api_key = api_key or OPENWEATHER_API_KEY
+    target_time = _parse_iso_time(time)
+
+    query = urlencode(
+        {
+            "lat": lat,
+            "lon": lon,
+            "appid": api_key,
+            "units": "metric",
+        }
+    )
+
+    current_url = f"https://api.openweathermap.org/data/2.5/weather?{query}"
+    forecast_url = f"https://api.openweathermap.org/data/2.5/forecast?{query}"
+
+    try:
+        current_data = _fetch_json(current_url)
+        forecast_data = _fetch_json(forecast_url)
+    except RuntimeError as exc:
+        return {
+            "target_time": target_time.isoformat().replace("+00:00", "Z"),
+            "coordinates": {"lat": lat, "lon": lon},
+            "error": str(exc),
+            "hint": "Check that the OpenWeather API key is valid and activated, or set STARGUIDE_OPENWEATHER_API_KEY in your environment.",
+        }
+
+    if current_data.get("cod") not in (200, "200"):
+        raise RuntimeError(f"Current weather request failed: {current_data}")
+    if forecast_data.get("cod") not in (200, "200"):
+        raise RuntimeError(f"Forecast request failed: {forecast_data}")
+
+    current_weather = {
+        "time": _format_dt_from_unix(current_data.get("dt", 0)),
+        "temperature_c": round(float(current_data["main"]["temp"]), 3),
+        "feels_like_c": round(float(current_data["main"]["feels_like"]), 3),
+        "conditions": current_data["weather"][0]["description"],
+        "humidity_pct": int(current_data["main"]["humidity"]),
+        "wind_speed_mps": round(float(current_data.get("wind", {}).get("speed", 0.0)), 3),
+    }
+
+    forecast_items = []
+    for item in forecast_data.get("list", []):
+        item_dt = datetime.fromtimestamp(int(item["dt"]), tz=timezone.utc)
+        delta_hours = (item_dt - target_time).total_seconds() / 3600.0
+        if 0 <= delta_hours <= 6:
+            forecast_items.append(
+                {
+                    "time": _format_dt_from_unix(item["dt"]),
+                    "temperature_c": round(float(item["main"]["temp"]), 3),
+                    "conditions": item["weather"][0]["description"],
+                }
+            )
+
+    return {
+        "target_time": target_time.isoformat().replace("+00:00", "Z"),
+        "location": {
+            "name": current_data.get("name"),
+            "country": current_data.get("sys", {}).get("country"),
+            "lat": round(float(lat), 4),
+            "lon": round(float(lon), 4),
+        },
+        "current_weather": current_weather,
+        "next_6h_forecast": forecast_items,
+    }

@@ -1,10 +1,22 @@
-# main.py
+# Run Local :-
+# `.venv/scripts/activate`
+# `uv run python main.py`
+# or 
+# `uv run fastmcp dev inspector main.py`   # -> to test the tools using inspector
+
+
+# then Deploy on Remote Server using fastMCP cloud
+# Use Inspector on fastMCP cloud website to test the tools on the server
+
+# Server URL after deploying :-
+# https://MCP-Project-Stargazing.fastmcp.app/mcp
 
 from fastmcp import FastMCP
 from tools import (
     get_visible_objects,
     get_object_position,
-    get_object_detail
+    get_object_detail,
+    get_weather_forecast
 )
 
 # Create MCP server
@@ -22,11 +34,6 @@ def visible_objects(lat: float, lon: float, time: str = None, alti: float = 0):
 
     try:
         result = get_visible_objects(lat=lat, lon=lon, time=time, alti=alti)
-
-        if not result:
-            return {
-                "error": "No visible objects found for this location and time."
-            }
 
         return result
 
@@ -79,6 +86,25 @@ def object_detail(object_name: str):
     except Exception as e:
         return {
             "error": f"Failed to fetch object details: {str(e)}"
+        }
+
+
+# -------------------------
+# TOOL 4: get_weather_forecast
+# -------------------------
+@mcp.tool()
+def weather_forecast(lat: float, lon: float, time: str = None):
+    """
+    Get current weather and next 6 hours forecast for a location.
+    """
+
+    try:
+        result = get_weather_forecast(lat=lat, lon=lon, time=time)
+        return result
+
+    except Exception as e:
+        return {
+            "error": f"Failed to fetch weather forecast: {str(e)}"
         }
 
 
