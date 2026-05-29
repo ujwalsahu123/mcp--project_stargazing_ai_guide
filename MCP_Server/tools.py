@@ -348,7 +348,8 @@ def get_visible_objects(lat, lon, time=None, alti=0):
     visible.sort(key=lambda x: x["brightness"], reverse=True)
 
     if visible:
-        return visible # return all the visible objects sorted by brightness (we started with 50 but it may not always return 50 since some objects may not be visible alt<0)
+        # Return an object so FastMCP includes structuredContent consistently.
+        return {"objects": visible}
     else:
         return {"error": "No visible objects found for this location and time."}
 
@@ -422,7 +423,7 @@ def health_check():
     Simple no-input health check.
     """
 
-    return "success"
+    return {"status": "success"}
 
 
 # -------------------------
