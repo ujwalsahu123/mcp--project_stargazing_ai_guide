@@ -56,11 +56,22 @@ def _load_ephemeris():
 
     raise RuntimeError("Unable to load de440s.bsp from any configured data directory") from last_error
 
+load = None
+planets = None
+earth = None
+ts = None
 
-load, planets = _load_ephemeris()
 
-earth = planets["earth"]
-ts = load.timescale()
+def initialize_ephemeris(loader, ephemeris):
+    """
+    Store the shared Skyfield loader and ephemeris for request-time use.
+    """
+
+    global load, planets, earth, ts
+    load = loader
+    planets = ephemeris
+    earth = planets["earth"]
+    ts = load.timescale()
 
 
 # -------------------------
@@ -320,10 +331,10 @@ def get_visible_objects(lat, lon, time=None, alti=0):
             visible.append({
                 "name": name.capitalize(),
                 "type": object_type,
-                "alt": round(float(alt), 4),
-                "az": round(float(az), 4),
-                "magnitude": round(float(magnitude), 4),
-                "brightness": round(_brightness_from_magnitude(magnitude), 4),
+                "alt": round(float(alt), 3),
+                "az": round(float(az), 3),
+                "magnitude": round(float(magnitude), 3),
+                "brightness": round(_brightness_from_magnitude(magnitude), 3),  # keeping it 3 since some objects have very low brightness and we want to differentiate them in the sorting
             })
 
     # Stars
@@ -338,10 +349,10 @@ def get_visible_objects(lat, lon, time=None, alti=0):
             visible.append({
                 "name": star,
                 "type": "star",
-                "alt": round(float(alt), 4),
-                "az": round(float(az), 4),
-                "magnitude": round(float(magnitude), 4),
-                "brightness": round(_brightness_from_magnitude(magnitude), 6),  # keeping it 6 since some objects have very low brightness and we want to differentiate them in the sorting
+                "alt": round(float(alt), 3),
+                "az": round(float(az), 3),
+                "magnitude": round(float(magnitude), 3),
+                "brightness": round(_brightness_from_magnitude(magnitude), 3),  # keeping it 3 since some objects have very low brightness and we want to differentiate them in the sorting
             })
 
     # Sort by brightness (higher brightness first)
@@ -369,8 +380,8 @@ def get_object_position(object_name, lat, lon, time=None, alti=0):
     if name in SOLAR_SYSTEM_MAP:
         alt, az = calculate_solar_system_alt_az(name, lat, lon, alti, time_input=time)
         if alt is not None:
-            alt = round(float(alt), 4)
-            az = round(float(az), 4)
+            alt = round(float(alt), 3)
+            az = round(float(az), 3)
             return {"name": name, "alt": alt, "az": az}
 
     # Star
@@ -378,8 +389,8 @@ def get_object_position(object_name, lat, lon, time=None, alti=0):
     if ra is not None:
         alt, az = calculate_star_alt_az(ra, dec, lat, lon, alti, time_input=time)
         if alt is not None:
-            alt = round(float(alt), 4)
-            az = round(float(az), 4)
+            alt = round(float(alt), 3)
+            az = round(float(az), 3)
             return {"name": name, "alt": alt, "az": az}
 
     return {"error": f"Object '{object_name}' not found or not visible"}

@@ -10,12 +10,18 @@ uv run python test.py
 import json
 import sys
 from tools import (
+    _load_ephemeris,
+    initialize_ephemeris,
     get_visible_objects,
     get_object_position,
     get_object_detail,
     health_check,
     get_weather_forecast,
 )
+
+
+load, planets = _load_ephemeris()
+initialize_ephemeris(load, planets)
 
 # Fix encoding for Windows
 if sys.platform == "win32":

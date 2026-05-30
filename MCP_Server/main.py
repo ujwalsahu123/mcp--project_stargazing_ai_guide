@@ -13,12 +13,18 @@
 
 from fastmcp import FastMCP
 from tools import (
+    _load_ephemeris,
+    initialize_ephemeris,
     get_visible_objects,
     get_object_position,
     get_object_detail,
     health_check as run_health_check,
     get_weather_forecast
 )
+
+
+load, planets = _load_ephemeris()
+initialize_ephemeris(load, planets)
 
 # Create MCP server
 mcp = FastMCP("stargazing-mcp-server")
