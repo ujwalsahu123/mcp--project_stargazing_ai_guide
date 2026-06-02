@@ -1,10 +1,10 @@
 # StarGuide MCP AI Tool
 
 
-<a href = "https://star-guide-mcp.streamlit.app/" > APP1 </a>
+<h2><a href = "https://star-guide-mcp.streamlit.app/" >APP1 using Streamlit </a></h2>
 
 
-<a href = "https://ujwalsahu123.github.io/MCP--Project_Stargazing_AI_Guide/" > APP2 </a>
+<h2><a href = "https://ujwalsahu123.github.io/MCP--Project_Stargazing_AI_Guide/" >APP2 using JS</a> </h2>
 
 Note -> It takes a few Minutes to Run at the First Start (due to starting the Backend, MCP server)
 
