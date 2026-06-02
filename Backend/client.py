@@ -1,9 +1,10 @@
+import asyncio
 import json
 import os
 import uuid
-from datetime import datetime
-import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from pathlib import Path
 
 import httpx
 from dotenv import load_dotenv
@@ -30,8 +31,10 @@ You receive the chat history and the current user message.
 Always prioritize the current user message over older context.
 Use chat history only when the current message clearly depends on it.
 Do not repeat older tool results unless they are directly relevant to the current question.
+If the user greets you or sends a short casual message like hi, hello, hey, okay, thanks, or similar small talk, answer naturally and do not call any MCP tool.
 If the user asks about the conversation itself, answer from the chat history directly.
 Only use MCP tools when the current question truly needs live astronomy data.
+Use object_names.json to map the user's object request to the correct canonical object name before choosing tool arguments.
 When using a tool, use only the exact latitude, longitude, time, and altitude values provided by the user.
 Do not invent, change, normalize, or guess tool arguments.
 If a tool is needed, return tool_calls with the correct tool name and exact args.
@@ -52,12 +55,26 @@ If tools were used, summarize only the useful result in a clean, user-facing way
 Keep the response polished, accurate, and concise unless the user explicitly asks for detail.
 """.strip()
 
-
 BOOTSTRAP_EXECUTOR = ThreadPoolExecutor(max_workers=2)
+OBJECT_NAMES_PATH = Path(__file__).with_name("object_names.json")
+
+
+def _load_object_names_json():
+	try:
+		with OBJECT_NAMES_PATH.open("r", encoding="utf-8") as handle:
+			return json.load(handle)
+	except Exception:
+		return {}
+
+
+OBJECT_NAMES_JSON = json.dumps(_load_object_names_json(), indent=2, ensure_ascii=False)
+
+
+def object_names_system_message():
+	return SystemMessage(content=f"Object_names.json:\n{OBJECT_NAMES_JSON}")
 
 
 def current_iso_time():
-	"""Return current local time in ISO format with timezone offset."""
 	return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
@@ -88,19 +105,6 @@ async def post_mcp(payload):
 		return response
 
 
-async def fetch_tool_names():
-	payload = {
-		"jsonrpc": "2.0",
-		"id": str(uuid.uuid4()),
-		"method": "tools/list",
-		"params": {},
-	}
-	response = await post_mcp(payload)
-	result = extract_mcp_result(response.text)
-	tools = result.get("tools", []) or []
-	return [tool["name"] for tool in tools]
-
-
 def _short_description(text, max_len=64):
 	if not text:
 		return "No description"
@@ -112,36 +116,7 @@ def _short_description(text, max_len=64):
 	return clean[: max_len - 3].rstrip() + "..."
 
 
-async def fetch_tools_info():
-	"""Return list of tools with short display descriptions."""
-	payload = {
-		"jsonrpc": "2.0",
-		"id": str(uuid.uuid4()),
-		"method": "tools/list",
-		"params": {},
-	}
-
-	response = await post_mcp(payload)
-	result = extract_mcp_result(response.text)
-	tools = result.get("tools", []) or []
-
-	output = []
-	for tool in tools:
-		name = tool.get("name", "unknown_tool")
-		description = tool.get("description", "")
-		output.append(
-			{
-				"name": name,
-				"description": description,
-				"short_description": _short_description(description),
-			}
-		)
-
-	return output
-
-
 async def fetch_tools_raw():
-	"""Return full raw MCP tool metadata from tools/list."""
 	payload = {
 		"jsonrpc": "2.0",
 		"id": str(uuid.uuid4()),
@@ -152,6 +127,27 @@ async def fetch_tools_raw():
 	response = await post_mcp(payload)
 	result = extract_mcp_result(response.text)
 	return result.get("tools", []) or []
+
+
+def summarize_tools(mcp_tools):
+	tools = []
+	for tool in mcp_tools:
+		tools.append(
+			{
+				"name": tool.get("name", "unknown_tool"),
+				"description": tool.get("description", ""),
+				"short_description": _short_description(tool.get("description", "")),
+			}
+		)
+	return tools
+
+
+def _summarize_tools(mcp_tools):
+	return summarize_tools(mcp_tools)
+
+
+async def fetch_tools_info():
+	return summarize_tools(await fetch_tools_raw())
 
 
 async def call_tool(tool_name, params):
@@ -189,6 +185,44 @@ async def call_tool(tool_name, params):
 	return {"status": "ok", "raw": result}
 
 
+async def health_check():
+	return await call_tool("health_check", {})
+
+
+async def bootstrap_connection_runtime(lat, lon, alti):
+	health_task = call_tool("health_check", {})
+	raw_tools_task = fetch_tools_raw()
+	health_result, raw_tools = await asyncio.gather(health_task, raw_tools_task)
+	if isinstance(health_result, dict) and health_result.get("error"):
+		return {"error": f"Health check failed: {health_result['error']}"}
+
+	llm_with_tools = _build_llm(streaming=False).bind_tools(_build_openai_tools(raw_tools))
+	return {
+		"llm_with_tools": llm_with_tools,
+		"tools_info": summarize_tools(raw_tools),
+	}
+
+
+async def bootstrap_chatbot_runtime(lat, lon, alti):
+	return await bootstrap_connection_runtime(lat, lon, alti)
+
+
+def start_connection_bootstrap(lat, lon, alti):
+	return BOOTSTRAP_EXECUTOR.submit(asyncio.run, bootstrap_connection_runtime(lat, lon, alti))
+
+
+def start_chatbot_bootstrap(lat, lon, alti):
+	return BOOTSTRAP_EXECUTOR.submit(asyncio.run, bootstrap_chatbot_runtime(lat, lon, alti))
+
+
+async def bootstrap_connection_state():
+	return await health_check()
+
+
+def start_health_check_bootstrap():
+	return BOOTSTRAP_EXECUTOR.submit(asyncio.run, bootstrap_connection_state())
+
+
 def _build_llm(streaming=False):
 	if not AZURE_ENDPOINT or not AZURE_API_KEY or not AZURE_DEPLOYMENT_NAME:
 		raise RuntimeError("Missing Azure OpenAI credentials in environment variables.")
@@ -218,19 +252,6 @@ def _build_openai_tools(mcp_tools):
 	return openai_tools
 
 
-def _summarize_tools(mcp_tools):
-	tools = []
-	for tool in mcp_tools:
-		tools.append(
-			{
-				"name": tool.get("name", "unknown_tool"),
-				"description": tool.get("description", ""),
-				"short_description": _short_description(tool.get("description", "")),
-			}
-		)
-	return tools
-
-
 def _history_to_langchain_messages(chat_messages):
 	messages = []
 	for msg in chat_messages:
@@ -241,83 +262,18 @@ def _history_to_langchain_messages(chat_messages):
 	return messages
 
 
-def _format_visible_intro(visible_result):
-	objects = []
-	if isinstance(visible_result, dict):
-		objects = visible_result.get("objects", []) or []
-
-	if not objects:
-		return "I could not find visible objects right now. How can I help you?"
-
-	lines = ["10 brightest celestial objects above you right now:"]
-	for obj in objects[:10]:
-		name = obj.get("name", "Unknown")
-		obj_type = obj.get("type", "object")
-		lines.append(f"- {name} ({obj_type})")
-	lines.append("\nHow can I help you?")
-	return "\n".join(lines)
-
-
-async def initialize_chatbot_runtime(lat, lon, alti):
-	"""Run startup checks and return a tool-bound first-pass LLM plus intro message."""
-	health = await call_tool("health_check", {})
-	if isinstance(health, dict) and health.get("error"):
-		return {"error": f"Health check failed: {health['error']}"}
-
-	raw_tools = await fetch_tools_raw()
-	llm_with_tools = _build_llm(streaming=False).bind_tools(_build_openai_tools(raw_tools))
-
-	visible_result = await call_tool(
-		"visible_objects",
-		{
-			"lat": float(lat),
-			"lon": float(lon),
-			"time": current_iso_time(),
-			"alti": float(alti or 0.0),
-		},
-	)
-
-	return {
-		"llm_with_tools": llm_with_tools,
-		"intro_message": _format_visible_intro(visible_result),
-	}
-
-
-async def bootstrap_chatbot_runtime(lat, lon, alti):
-	"""Fetch startup data concurrently so the UI can render immediately."""
-	health_task = call_tool("health_check", {})
-	raw_tools_task = fetch_tools_raw()
-	visible_task = call_tool(
-		"visible_objects",
-		{
-			"lat": float(lat),
-			"lon": float(lon),
-			"time": current_iso_time(),
-			"alti": float(alti or 0.0),
-		},
-	)
-
-	health_result, raw_tools, visible_result = await asyncio.gather(health_task, raw_tools_task, visible_task)
-	if isinstance(health_result, dict) and health_result.get("error"):
-		return {"error": f"Health check failed: {health_result['error']}"}
-
-	llm_with_tools = _build_llm(streaming=False).bind_tools(_build_openai_tools(raw_tools))
-	return {
-		"llm_with_tools": llm_with_tools,
-		"intro_message": _format_visible_intro(visible_result),
-		"tools_info": _summarize_tools(raw_tools),
-	}
-
-
-def start_chatbot_bootstrap(lat, lon, alti):
-	"""Start bootstrap work in a background thread and return a future."""
-	return BOOTSTRAP_EXECUTOR.submit(asyncio.run, bootstrap_chatbot_runtime(lat, lon, alti))
+def _first_messages(prompt_text, chat_messages):
+	return [
+		SystemMessage(content=FIRST_SYSTEM_PROMPT),
+		object_names_system_message(),
+		*_history_to_langchain_messages(chat_messages),
+		HumanMessage(content=prompt_text),
+	]
 
 
 async def run_llm_chat_turn(user_prompt, lat, lon, alti, chat_messages, llm_with_tools):
-	"""Two-pass LLM tool flow for one user turn."""
 	if llm_with_tools is None:
-		raise RuntimeError("LLM is not initialized. Run initialize_chatbot_runtime first.")
+		raise RuntimeError("LLM is not initialized. Run bootstrap_chatbot_runtime first.")
 
 	latest_time = current_iso_time()
 	prompt_text = (
@@ -328,14 +284,7 @@ async def run_llm_chat_turn(user_prompt, lat, lon, alti, chat_messages, llm_with
 		f"altitude: {float(alti or 0.0)}"
 	)
 
-	history = _history_to_langchain_messages(chat_messages)
-	first_messages = [
-		SystemMessage(content=FIRST_SYSTEM_PROMPT),
-		*history,
-		HumanMessage(content=prompt_text),
-	]
-
-	first_response = await llm_with_tools.ainvoke(first_messages)
+	first_response = await llm_with_tools.ainvoke(_first_messages(prompt_text, chat_messages))
 
 	if not getattr(first_response, "tool_calls", None):
 		return first_response.content or ""
@@ -355,7 +304,7 @@ async def run_llm_chat_turn(user_prompt, lat, lon, alti, chat_messages, llm_with
 
 	second_messages = [
 		SystemMessage(content=SECOND_SYSTEM_PROMPT),
-		*history,
+		*_history_to_langchain_messages(chat_messages),
 		HumanMessage(content=prompt_text),
 		first_response,
 		*tool_messages,
@@ -370,10 +319,13 @@ async def run_llm_chat_turn(user_prompt, lat, lon, alti, chat_messages, llm_with
 	return final_response.content or ""
 
 
-async def stream_llm_chat_turn(user_prompt, lat, lon, alti, chat_messages, llm_with_tools, on_delta):
-	"""Run one chat turn and stream the final answer text through on_delta."""
+async def stream_llm_chat_turn(user_prompt, lat, lon, alti, chat_messages, llm_with_tools, on_delta, on_status=None):
 	if llm_with_tools is None:
-		raise RuntimeError("LLM is not initialized. Run initialize_chatbot_runtime first.")
+		raise RuntimeError("LLM is not initialized. Run bootstrap_chatbot_runtime first.")
+
+	def emit_status(message):
+		if on_status is not None:
+			on_status(message)
 
 	latest_time = current_iso_time()
 	prompt_text = (
@@ -384,23 +336,36 @@ async def stream_llm_chat_turn(user_prompt, lat, lon, alti, chat_messages, llm_w
 		f"altitude: {float(alti or 0.0)}"
 	)
 
-	history = _history_to_langchain_messages(chat_messages)
-	first_messages = [
-		SystemMessage(content=FIRST_SYSTEM_PROMPT),
-		*history,
-		HumanMessage(content=prompt_text),
-	]
-
-	first_response = await llm_with_tools.ainvoke(first_messages)
+	emit_status("Calling LLM1")
+	first_response = await llm_with_tools.ainvoke(_first_messages(prompt_text, chat_messages))
 	if not getattr(first_response, "tool_calls", None):
-		text = first_response.content or ""
-		on_delta(text)
-		return text
+		emit_status("LLM1 finished: direct answer path")
+		second_messages = [
+			SystemMessage(content=SECOND_SYSTEM_PROMPT),
+			*_history_to_langchain_messages(chat_messages),
+			HumanMessage(content=prompt_text),
+			first_response,
+		]
+
+		final_llm = _build_llm(streaming=True)
+		text_parts = []
+		async for chunk in final_llm.astream(second_messages):
+			chunk_text = getattr(chunk, "content", None) or ""
+			if chunk_text:
+				text_parts.append(chunk_text)
+				on_delta("".join(text_parts))
+
+		root_client = getattr(final_llm, "root_async_client", None)
+		if root_client is not None:
+			await root_client.close()
+
+		return "".join(text_parts).strip()
 
 	tool_messages = []
 	for tool_call in first_response.tool_calls:
 		tool_name = tool_call.get("name")
 		tool_args = tool_call.get("args", {})
+		emit_status(f"Calling tool: {tool_name} {json.dumps(tool_args, ensure_ascii=False, default=str)}")
 		tool_id = tool_call.get("id", str(uuid.uuid4()))
 		result = await call_tool(tool_name, tool_args)
 		tool_messages.append(
@@ -410,9 +375,10 @@ async def stream_llm_chat_turn(user_prompt, lat, lon, alti, chat_messages, llm_w
 			)
 		)
 
+	emit_status("Calling LLM2")
 	second_messages = [
 		SystemMessage(content=SECOND_SYSTEM_PROMPT),
-		*history,
+		*_history_to_langchain_messages(chat_messages),
 		HumanMessage(content=prompt_text),
 		first_response,
 		*tool_messages,
@@ -434,9 +400,6 @@ async def stream_llm_chat_turn(user_prompt, lat, lon, alti, chat_messages, llm_w
 
 
 def auto_fetch_location():
-	"""Best-effort location from public IP geolocation service."""
-	errors = []
-
 	providers = [
 		(
 			"ipapi",
@@ -460,6 +423,7 @@ def auto_fetch_location():
 		),
 	]
 
+	errors = []
 	for provider_name, url, parser in providers:
 		try:
 			r = httpx.get(url, timeout=10.0)
@@ -468,7 +432,6 @@ def auto_fetch_location():
 				continue
 			r.raise_for_status()
 			data = r.json()
-
 			if provider_name == "ipwho" and data.get("success") is False:
 				errors.append(f"{provider_name}: {data.get('message', 'request failed')}")
 				continue
