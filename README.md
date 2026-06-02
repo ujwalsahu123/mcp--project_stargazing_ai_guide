@@ -8,7 +8,7 @@
 
 Note -> It takes a few Minutes to Run at the First Start (due to starting the Backend, MCP server)
 
-<img src="backend/image.png" alt="StarGuide UI" width="600"/>
+<img src="Backend/image.png" alt="StarGuide UI" width="600"/>
 <img src="images/image5.png" alt="StarGuide UI" width="600"/>
 <img src="images/image6.png" alt="StarGuide UI" width="600"/>
 <img src="images/image7.png" alt="StarGuide UI" width="600"/>
