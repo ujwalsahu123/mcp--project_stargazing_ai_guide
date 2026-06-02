@@ -4,16 +4,22 @@ MCP Server Check - Test MCP Server connection and tools working or not.
 - Directly Calling the tools without using LLM decision making to call the tools
 
 - using way 2) direct HTTP request 
-- Execution Time: 9.1325 seconds
+- same as test1.2.py but here instead of initalizing & closing the client - in each tool call, we are creating a global client which will be initialized once in the start and then we can use that global client to call the tools from any function without creating new client every time.
+- Execution Time: 7.3325 seconds
 
-- no need to run any initialization at the startup (since there is no global tool or client initialization needed)
+- This way is Recommended , since its better than test1.2.py
+
+- Warning comes when we run this code ... telling to close the client after using it - await CLIENT.aclose()
+- but since a backend server it runs continuously - it will not show warning to close the client.
+- it is a bit faster since we are not creating new client every time we call the tool
+
+- need to run the initialize_client() function at startup to initialize the global client
 
 run ->
 cd Backend
 .venv/scripts/activate    # Activate virtual environment
 uv run python test1.py
 """
-
 
 import asyncio
 import json
@@ -36,13 +42,27 @@ MCP_SERVER_URL = os.getenv("STARGUIDE_MCP_SERVER_URL")
 API_KEY = os.getenv("STARGUIDE_API_KEY")
 
 
+
 # --------------------------------------------------
-# Call Tool - Parse Response - Return Output
+# Make global Client - so that we can call the tools from any function without creating new client every time
 # --------------------------------------------------
 
-async def call_tool_fun(tool_name, params):
+CLIENT = None
 
-    # Make Client
+async def initialize_client():
+
+    print("\n" + "=" * 70)
+    print("  MCP Server Status Check")
+
+    if not MCP_SERVER_URL:
+        print("\n❌ Error: STARGUIDE_MCP_SERVER_URL not set in .env")
+
+    if not API_KEY:
+        print("\n❌ Error: STARGUIDE_API_KEY not set in .env")
+
+
+    global CLIENT
+
     CLIENT = httpx.AsyncClient(
         timeout=120.0,
         headers={
@@ -51,6 +71,19 @@ async def call_tool_fun(tool_name, params):
             "Accept": "application/json, text/event-stream",
         }
     )
+
+    print("✓ MCP Client Initialized")
+
+
+
+
+
+
+# --------------------------------------------------
+# Call Tool - Parse Response - Return Output
+# --------------------------------------------------
+
+async def call_tool_fun(tool_name, params):
 
     # making the mcp request by ourself without using any client library
     payload = {
@@ -63,17 +96,13 @@ async def call_tool_fun(tool_name, params):
         },
     }
 
-    # call the tool - like we call an API endpoint
     response = await CLIENT.post(
         MCP_SERVER_URL,
         json=payload,
     )
 
     response.raise_for_status()
-
-    await CLIENT.aclose() # close the client after the request is done
-
-
+    
     # # Response Format When using https to call the tool :-
     # {
     #   "result": 
@@ -98,7 +127,7 @@ async def call_tool_fun(tool_name, params):
     
     # The content is always returned , but the structuredContent is only returned when the output is in a structured format like Dictionary, JSON ... and structuredContent is same as content.text just in a structured JSON format.
     # so we need to extract the text from the response > result > structured content > or if structured content is not available then extract context > text 
-   
+  
 
     # parse the result from the response    
     for line in response.text.splitlines():
@@ -109,7 +138,7 @@ async def call_tool_fun(tool_name, params):
             result = data.get("result", {})
             break
     else:
-        return None
+        return "No result in response"
      
 
     # check if result available    
@@ -117,8 +146,6 @@ async def call_tool_fun(tool_name, params):
         return None
 
     # check if error
-    # So we can use the isError field to check if the tool call was successful or not
-
     is_error = result.get("isError")
     if is_error:
         return None
@@ -162,10 +189,10 @@ async def test_tools():
 
     # Example values - for testing 
     # later use the users provided values 
-    EXAMPLE_LAT = 19.777      # Mumbai
-    EXAMPLE_LON = 72.888
-    EXAMPLE_ALTI = -10        # meters
-    EXAMPLE_TIME = "2026-05-28T20:34:44+05:30"
+    EXAMPLE_LAT = 19.274      # Mumbai
+    EXAMPLE_LON = 72.881
+    EXAMPLE_ALTI = -52        # meters
+    EXAMPLE_TIME = "2026-05-27T20:34:44+05:30"
     EXAMPLE_STAR = "Sirius"
     
 
@@ -292,13 +319,18 @@ async def test_tools():
 
 
 # -----------------------------------
-# Main function -  
+# In Main function - call the initialize_client() function 
 # -----------------------------------
 
+# So that when the backend starts then main function will automatically run in the start , and then it will load the client and store them in the global variable CLIENT and then we can use it from any function in the backend.
 
 async def main():
-    
+
+    await initialize_client() # to initialize the global client which we can use to call the tools from any function without creating new client every time
+
     await test_tools() # to test the tools by calling them directly using the global variable TOOLS without relying on agent to call the tools
+  
+
 
 
 
@@ -311,7 +343,7 @@ if __name__ == "__main__":
 
     # run the main function
     asyncio.run(main())
-
+    
     # time counter end
     end = time.perf_counter()
     print(f"Time Taken: {end - start:.4f} sec")

@@ -1,5 +1,10 @@
 """
-MCP Server Check - Test MCP Server connection and tools working or not.
+MCP Server Check - Test MCP Server connection and tools working or not
+
+- Directly Calling the tools without using LLM decision making to call the tools
+
+- using way 1) using langchain_mcp_adapters.client
+- Execution Time: 45.1584 seconds
 
 run ->
 cd Backend
@@ -7,315 +12,290 @@ cd Backend
 uv run python test1.py
 """
 
+
 import asyncio
 import json
 import os
-import uuid
 
-import httpx
 from dotenv import load_dotenv
+from langchain_mcp_adapters.client import MultiServerMCPClient
 
 
 # Load environment variables
 load_dotenv()
 
 
-# Example values
-EXAMPLE_LAT = 19.274      # Mumbai
-EXAMPLE_LON = 72.881
-EXAMPLE_ALTI = -52        # meters
-EXAMPLE_TIME = "2026-05-27T20:34:44+05:30"
-EXAMPLE_STAR = "Sirius"
+# --------------------------------------------------
+# CONFIG
+# --------------------------------------------------
 
-
-# MCP Server URL & API key
 MCP_SERVER_URL = os.getenv("STARGUIDE_MCP_SERVER_URL")
 API_KEY = os.getenv("STARGUIDE_API_KEY")
 
-
-# --------------------------------------------------
-# RESPONSE PARSER
-# --------------------------------------------------
-
-def parse_response(response):
-    result = response.get("result", {}) if isinstance(response, dict) else {}
-
-    if not result and isinstance(response, list):
-        content_text = ""
-
-        for item in response:
-            if item.get("type") == "text":
-                content_text += item.get("text", "")
-
-        if content_text:
-            try:
-                return json.dumps(json.loads(content_text), indent=2)
-            except json.JSONDecodeError:
-                return content_text
-
-    is_error = result.get("isError")
-    if is_error:
-        return "error"
-
-    structured_content = result.get("structuredContent")
-    if structured_content:
-        return json.dumps(structured_content, indent=2)
-
-    content = result.get("content", [])
-    if content and isinstance(content, list):
-        content_text = ""
-
-        for item in content:
-            if item.get("type") == "text":
-                content_text += item.get("text", "")
-
-        return content_text or "No content returned"
-
-    return "No content returned"
-
-
-def print_response(response):
-    output = parse_response(response)
-    print(output)
-
-
-async def call_mcp_tool(client: httpx.AsyncClient, tool_name: str, **kwargs):
-    """Call a tool on the MCP server using direct JSON-RPC."""
-    payload = {
-        "jsonrpc": "2.0",
-        "id": str(uuid.uuid4()),
-        "method": "tools/call",
-        "params": {
-            "name": tool_name,
-            "arguments": kwargs,
+SERVERS = {
+    "starguide": {
+        "transport": "streamable_http",
+        "url": MCP_SERVER_URL,
+        "headers": {
+            "Authorization": f"Bearer {API_KEY}",
         },
     }
-
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json, text/event-stream",
-        "Authorization": f"Bearer {API_KEY}",
-    }
-
-    response = await client.post(MCP_SERVER_URL, json=payload, headers=headers)
-    response.raise_for_status()
-
-    for line in response.text.splitlines():
-        if line.startswith("data:"):
-            try:
-                return json.loads(line[5:].strip())
-            except json.JSONDecodeError:
-                continue
-
-    raise ValueError("No valid JSON in response")
-
-
-
-
-
-
-
-
-
-
-
-
-# async def call_tool_fun(tool_name, params):
-
-#     # call the tool using the tool_name and pass the params as arguments to the tool
-#     response = await tool_name.ainvoke(params)
-#     if not response:
-#         return "No response from tool"
-    
-
-#     # parse the result from the response
-#     result = response.get("result", response)
-#     if not result:
-#         return "No result in response"
-
-#     # check if error
-#     is_error = result.get("isError")
-#     if is_error:
-#         return "error"
-
-#     # return the structured content if available
-#     structured_content = result.get("structuredContent")
-#     if structured_content:
-#         return json.dumps(structured_content, indent=2)
-
-#     # if structured content is not available, try to extract content > text
-#     content = result.get("content", [])
-#     if content:
-#         text = content[0].get("text")        
-#         return text
-
-#     # if tool called successfully but no content returned
-#     return "No content in tool response"
-
-
-
-
+}
 
 
 
 
 # --------------------------------------------------
-# Visible Objects
+# Load Tools & Store Tool globally so that we can call them in any function
 # --------------------------------------------------
 
-async def test_visible_objects(client: httpx.AsyncClient):
-    print("\n" + "=" * 70)
-    print("TEST 1: Visible Objects")
-    print("=" * 70)
-    print(f"Location: {EXAMPLE_LAT}°N, {EXAMPLE_LON}°E")
-    print(f"Time: {EXAMPLE_TIME}")
-    print(f"Altitude: {EXAMPLE_ALTI}m\n")
+TOOLS = {}
 
-    try:
-        response = await call_mcp_tool(
-            client,
-            "visible_objects",
-            lat=EXAMPLE_LAT,
-            lon=EXAMPLE_LON,
-            time=EXAMPLE_TIME,
-            alti=EXAMPLE_ALTI,
-        )
-        print("✓ Success!")
-        print_response(response)
-    except Exception as e:
-        print(f"❌ Error: {e}")
+async def load_tools():
 
-
-# --------------------------------------------------
-# Object Position
-# --------------------------------------------------
-
-async def test_object_position(client: httpx.AsyncClient):
-    print("=" * 70)
-    print("TEST 2: Object Position (Mars)")
-    print("=" * 70)
-    print("Object: Mars")
-    print(f"Location: {EXAMPLE_LAT}°N, {EXAMPLE_LON}°E")
-    print(f"Time: {EXAMPLE_TIME}\n")
-
-    try:
-        response = await call_mcp_tool(
-            client,
-            "object_position",
-            object_name="Mars",
-            lat=EXAMPLE_LAT,
-            lon=EXAMPLE_LON,
-            time=EXAMPLE_TIME,
-            alti=EXAMPLE_ALTI,
-        )
-        print("✓ Success!")
-        print_response(response)
-    except Exception as e:
-        print(f"❌ Error: {e}")
-
-
-# --------------------------------------------------
-# Object Detail
-# --------------------------------------------------
-
-async def test_object_detail(client: httpx.AsyncClient):
-    print("=" * 70)
-    print("TEST 3: Object Details")
-    print("=" * 70)
-    print(f"Object: {EXAMPLE_STAR}\n")
-
-    try:
-        response = await call_mcp_tool(
-            client,
-            "object_detail",
-            object_name=EXAMPLE_STAR,
-        )
-        print("✓ Success!")
-        print_response(response)
-    except Exception as e:
-        print(f"❌ Error: {e}")
-
-
-# --------------------------------------------------
-# Health Check
-# --------------------------------------------------
-
-async def test_health_check(client: httpx.AsyncClient):
-    print("=" * 70)
-    print("TEST 4: Health Check")
-    print("=" * 70)
-
-    try:
-        response = await call_mcp_tool(client, "health_check")
-        print("✓ Success!")
-        print_response(response)
-    except Exception as e:
-        print(f"❌ Error: {e}")
-
-
-# --------------------------------------------------
-# Weather Forecast
-# --------------------------------------------------
-
-async def test_weather_forecast(client: httpx.AsyncClient):
-    print("=" * 70)
-    print("TEST 5: Weather Forecast")
-    print("=" * 70)
-    print(f"Location: {EXAMPLE_LAT}°N, {EXAMPLE_LON}°E")
-
-    try:
-        response = await call_mcp_tool(
-            client,
-            "weather_forecast",
-            lat=EXAMPLE_LAT,
-            lon=EXAMPLE_LON,
-        )
-        print("✓ Success! (tool: weather_forecast)")
-        print_response(response)
-    except Exception as e:
-        print(f"❌ Error: {e}")
-
-
-async def check_mcp_server():
     """Check if MCP Server is working and print tool outputs."""
 
     print("\n" + "=" * 70)
     print("  MCP Server Status Check")
-    print("=" * 70)
-    print(f"Server URL: {MCP_SERVER_URL}")
-    print(f"API Key: {API_KEY[:20]}..." if API_KEY else "❌ NO API KEY")
 
     if not MCP_SERVER_URL:
         print("\n❌ Error: STARGUIDE_MCP_SERVER_URL not set in .env")
-        return
 
     if not API_KEY:
         print("\n❌ Error: STARGUIDE_API_KEY not set in .env")
-        return
+
+
+    print("\n🔗 Connecting to StarGuide MCP Server...")
+    client = MultiServerMCPClient(SERVERS)
+    tools = await client.get_tools()
+
+    global TOOLS
+
+    TOOLS = {
+        tool.name: tool
+        for tool in tools
+    }
+
+
+    print("Available Tools:")
+    print(json.dumps(list(TOOLS.keys()), indent=2))
+    print("=" * 70, "\n")
+
+
+
+
+# --------------------------------------------------
+# Call Tool - Parse Response - Return Output
+# --------------------------------------------------
+
+async def call_tool_fun(tool_name, params):
+
+    # call the tool using the tool_name and pass the params as arguments to the tool
+    response = await tool_name.ainvoke(params)
+
+    if not response:
+        return None
+    
+    # # Response Format When using LangChain MCP Adapters Client to call the tool :-
+    # [
+    #   {
+    #       '#type': 'text', 
+    #       'text': '{"status":"success"}', 
+    #       'id': 'lc_07acb411-866d-4cf6-b8a3-c7880f84d5bb'
+    #   }
+    # ]
+    # so we need to extract the text from the response > text 
+
+
+
+    # Extract text from first content block
+    text = response[0].get("text", "")
+
+    # Convert JSON string -> Python Dict
+    try:
+        return json.loads(text)
+
+    except json.JSONDecodeError:
+        return {"text": text}
+
+
+# -----------------------------------
+# Test Tools - Directly just like any API endpoint from any function using LangChain MCP Adapters Client
+# -----------------------------------
+
+async def test_tools():
+
+    # we will be calling tools manually, and not relying on agent to call tools
+    # thus we need to store tool handles 
+    # and using it we can call tools directly
+    # in case of agent calling tools, we can skip this step and let agent decide which tool to call based 
+    health_check_tool = TOOLS.get("health_check")
+    visible_objects_tool = TOOLS.get("visible_objects")
+    object_position_tool = TOOLS.get("object_position")
+    object_detail_tool = TOOLS.get("object_detail")
+    weather_forecast_tool = TOOLS.get("weather_forecast")
+
+    # Example values - for testing 
+    # later use the users provided values 
+    EXAMPLE_LAT = 19.274      # Mumbai
+    EXAMPLE_LON = 72.881
+    EXAMPLE_ALTI = -52        # meters
+    EXAMPLE_TIME = "2026-05-27T20:34:44+05:30"
+    EXAMPLE_STAR = "Sirius"
+    
+
+    # --------------------------------------------------
+    # Health Check
+    # --------------------------------------------------
+
+    print("=" * 70)
+    print("TEST Health Check")
+
+    tool = health_check_tool
+    params = {}
 
     try:
-        print("\n🔗 Connecting to StarGuide MCP Server...")
-        timeout = httpx.Timeout(120.0)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            await test_visible_objects(client)
-            await test_object_position(client)
-            await test_object_detail(client)
-            await test_health_check(client)
-            await test_weather_forecast(client)
+        output = await call_tool_fun(tool, params)
+        print(json.dumps(output, indent=2))
+    
+    except Exception as e:
+        print(f"❌ Error: {e}")
 
-        print("=" * 70)
-        print("✓ All tests completed successfully!")
-        print("=" * 70)
+    print("=" * 70, "\n")
+
+
+    # --------------------------------------------------
+    # Visible Objects
+    # --------------------------------------------------
+
+    print("=" * 70)
+    print("TEST Visible Objects")
+
+    tool = visible_objects_tool
+    params = {
+        "lat": EXAMPLE_LAT,
+        "lon": EXAMPLE_LON,
+        "time": EXAMPLE_TIME,
+        "alti": EXAMPLE_ALTI,
+    }
+
+    try:
+        # Pass the Tool & arguments to call_tool function which will call the tool and return the output
+        output = await call_tool_fun(tool, params)
+        print(json.dumps(output, indent=2))
 
     except Exception as e:
         print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
 
+    print("=" * 70, "\n")
+
+
+    # --------------------------------------------------
+    # Object Position
+    # --------------------------------------------------
+
+    print("=" * 70)
+    print("TEST Object Position")
+
+    tool = object_position_tool
+    params = {
+        "object_name": EXAMPLE_STAR,
+        "lat": EXAMPLE_LAT,
+        "lon": EXAMPLE_LON,
+        "time": EXAMPLE_TIME,
+        "alti": EXAMPLE_ALTI,
+    }
+    
+    try:
+        output = await call_tool_fun(tool,params)
+        print(json.dumps(output, indent=2))
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+    print("=" * 70, "\n")
+
+    # --------------------------------------------------
+    # Object Detail
+    # --------------------------------------------------
+
+    print("=" * 70)
+    print("TEST Object Detail")
+
+    tool = object_detail_tool
+    params = {
+        "object_name": EXAMPLE_STAR,
+    }
+
+    try:
+        output = await call_tool_fun(tool, params)
+        print(json.dumps(output, indent=2))
+    
+    except Exception as e:
+        print(f"❌ Error: {e}")
+    
+    print("=" * 70, "\n")
+
+
+
+    # --------------------------------------------------
+    # Weather Forecast
+    # --------------------------------------------------
+
+    print("=" * 70)
+    print("TEST Weather Forecast")
+
+    tool = weather_forecast_tool
+    params = {
+        "lat": EXAMPLE_LAT,
+        "lon": EXAMPLE_LON,
+    }
+
+    try:
+        output = await call_tool_fun(tool, params)
+        print(json.dumps(output, indent=2))
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+    print("=" * 70, "\n")
+
+
+    print("✓ All tests completed successfully!")
+
+
+
+
+# -----------------------------------
+# In Main function - call the load_tools() function 
+# -----------------------------------
+
+# So that when the backend starts then main function will automatically run in the start , and then it will load the tools and store them in the global variable TOOLS and then we can call those tools from any function in the backend using the TOOLS variable.
 
 async def main():
-    await check_mcp_server()
+
+    await load_tools() # to load tools and store them in global variable TOOLS so that we can call them from any function in the backend
+
+    await test_tools() # to test the tools by calling them directly using the global variable TOOLS without relying on agent to call the tools
+
+# for FastAPI there is no main function but we can call the load_tools() function in the startup event of the FastAPI so that when the FastAPI server starts then it will automatically load the tools and store them in the global variable TOOLS and then we can call those tools from any endpoint in the FastAPI using the TOOLS variable.
+
+# @app.on_event("startup")
+# async def startup():
+#     await load_tools()
+
 
 
 if __name__ == "__main__":
+
+    # time counter start
+    import time
+    start = time.perf_counter()
+
+    # run the main function
     asyncio.run(main())
+
+    # time counter end
+    end = time.perf_counter()
+    print(f"Time Taken: {end - start:.4f} sec")
+ 
