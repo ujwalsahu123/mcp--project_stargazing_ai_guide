@@ -94,6 +94,7 @@ async def post_mcp(payload):
 
 	async with httpx.AsyncClient(
 		timeout=120.0,
+		trust_env=False,
 		headers={
 			"Authorization": f"Bearer {API_KEY}",
 			"Content-Type": "application/json",
@@ -116,33 +117,6 @@ def _short_description(text, max_len=64):
 	return clean[: max_len - 3].rstrip() + "..."
 
 
-async def fetch_tools_info():
-	payload = {
-		"jsonrpc": "2.0",
-		"id": str(uuid.uuid4()),
-		"method": "tools/list",
-		"params": {},
-	}
-
-	response = await post_mcp(payload)
-	result = extract_mcp_result(response.text)
-	tools = result.get("tools", []) or []
-
-	output = []
-	for tool in tools:
-		name = tool.get("name", "unknown_tool")
-		description = tool.get("description", "")
-		output.append(
-			{
-				"name": name,
-				"description": description,
-				"short_description": _short_description(description),
-			}
-		)
-
-	return output
-
-
 async def fetch_tools_raw():
 	payload = {
 		"jsonrpc": "2.0",
@@ -154,6 +128,27 @@ async def fetch_tools_raw():
 	response = await post_mcp(payload)
 	result = extract_mcp_result(response.text)
 	return result.get("tools", []) or []
+
+
+def summarize_tools(mcp_tools):
+	tools = []
+	for tool in mcp_tools:
+		tools.append(
+			{
+				"name": tool.get("name", "unknown_tool"),
+				"description": tool.get("description", ""),
+				"short_description": _short_description(tool.get("description", "")),
+			}
+		)
+	return tools
+
+
+def _summarize_tools(mcp_tools):
+	return summarize_tools(mcp_tools)
+
+
+async def fetch_tools_info():
+	return summarize_tools(await fetch_tools_raw())
 
 
 async def call_tool(tool_name, params):
@@ -191,6 +186,44 @@ async def call_tool(tool_name, params):
 	return {"status": "ok", "raw": result}
 
 
+async def health_check():
+	return await call_tool("health_check", {})
+
+
+async def bootstrap_connection_runtime(lat, lon, alti):
+	health_task = call_tool("health_check", {})
+	raw_tools_task = fetch_tools_raw()
+	health_result, raw_tools = await asyncio.gather(health_task, raw_tools_task)
+	if isinstance(health_result, dict) and health_result.get("error"):
+		return {"error": f"Health check failed: {health_result['error']}"}
+
+	llm_with_tools = _build_llm(streaming=False).bind_tools(_build_openai_tools(raw_tools))
+	return {
+		"llm_with_tools": llm_with_tools,
+		"tools_info": summarize_tools(raw_tools),
+	}
+
+
+async def bootstrap_chatbot_runtime(lat, lon, alti):
+	return await bootstrap_connection_runtime(lat, lon, alti)
+
+
+def start_connection_bootstrap(lat, lon, alti):
+	return BOOTSTRAP_EXECUTOR.submit(asyncio.run, bootstrap_connection_runtime(lat, lon, alti))
+
+
+def start_chatbot_bootstrap(lat, lon, alti):
+	return BOOTSTRAP_EXECUTOR.submit(asyncio.run, bootstrap_chatbot_runtime(lat, lon, alti))
+
+
+async def bootstrap_connection_state():
+	return await health_check()
+
+
+def start_health_check_bootstrap():
+	return BOOTSTRAP_EXECUTOR.submit(asyncio.run, bootstrap_connection_state())
+
+
 def _build_llm(streaming=False):
 	if not AZURE_ENDPOINT or not AZURE_API_KEY or not AZURE_DEPLOYMENT_NAME:
 		raise RuntimeError("Missing Azure OpenAI credentials in environment variables.")
@@ -202,6 +235,8 @@ def _build_llm(streaming=False):
 		api_version="2024-08-01-preview",
 		temperature=0,
 		streaming=streaming,
+		http_client=httpx.Client(trust_env=False),
+		http_async_client=httpx.AsyncClient(trust_env=False),
 	)
 
 
@@ -218,19 +253,6 @@ def _build_openai_tools(mcp_tools):
 			)
 		)
 	return openai_tools
-
-
-def _summarize_tools(mcp_tools):
-	tools = []
-	for tool in mcp_tools:
-		tools.append(
-			{
-				"name": tool.get("name", "unknown_tool"),
-				"description": tool.get("description", ""),
-				"short_description": _short_description(tool.get("description", "")),
-			}
-		)
-	return tools
 
 
 def _history_to_langchain_messages(chat_messages):
@@ -250,24 +272,6 @@ def _first_messages(prompt_text, chat_messages):
 		*_history_to_langchain_messages(chat_messages),
 		HumanMessage(content=prompt_text),
 	]
-
-
-async def bootstrap_chatbot_runtime(lat, lon, alti):
-	health_task = call_tool("health_check", {})
-	raw_tools_task = fetch_tools_raw()
-	health_result, raw_tools = await asyncio.gather(health_task, raw_tools_task)
-	if isinstance(health_result, dict) and health_result.get("error"):
-		return {"error": f"Health check failed: {health_result['error']}"}
-
-	llm_with_tools = _build_llm(streaming=False).bind_tools(_build_openai_tools(raw_tools))
-	return {
-		"llm_with_tools": llm_with_tools,
-		"tools_info": _summarize_tools(raw_tools),
-	}
-
-
-def start_chatbot_bootstrap(lat, lon, alti):
-	return BOOTSTRAP_EXECUTOR.submit(asyncio.run, bootstrap_chatbot_runtime(lat, lon, alti))
 
 
 async def run_llm_chat_turn(user_prompt, lat, lon, alti, chat_messages, llm_with_tools):
@@ -398,10 +402,6 @@ async def stream_llm_chat_turn(user_prompt, lat, lon, alti, chat_messages, llm_w
 	return "".join(text_parts).strip()
 
 
-async def health_check():
-	return await call_tool("health_check", {})
-
-
 def auto_fetch_location():
 	providers = [
 		(
@@ -429,7 +429,7 @@ def auto_fetch_location():
 	errors = []
 	for provider_name, url, parser in providers:
 		try:
-			r = httpx.get(url, timeout=10.0)
+			r = httpx.get(url, timeout=10.0, trust_env=False)
 			if r.status_code == 429:
 				errors.append(f"{provider_name}: rate limited")
 				continue
