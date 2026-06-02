@@ -21,10 +21,9 @@ INTRO_MESSAGE = """Hi, I'm AstroGuide. I can help you explore the sky above you,
 
 Try a demo question like:
 - Give me a weather forecast for stargazing tonight
+- Tell me the current position and mythological significance of Jupiter and Saturn
 - Find the top 10 brightest stars and planets above me
-- Show the current position of the Sun and Moon above me
-- Tell me the mythological significance of Mars and Venus
-or Run all these queries at once 😎
+- Show the current position of the Sun, Moon, Venus and Mars with its scientific information
 """
 
 _JSON_TOKEN_RE = re.compile(
@@ -517,7 +516,7 @@ def main():
 			padding: 12px;
 			border-radius: 12px;
 			border: 1px solid rgba(203, 213, 225, 0.06);
-			max-width: 1500px;
+			max-width: 900px;
 			margin: 0 auto 1.5rem auto;
 			box-sizing: border-box;
 		}

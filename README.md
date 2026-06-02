@@ -1,10 +1,17 @@
 # StarGuide MCP AI Tool
 
 
-<a href = "https://ujwalsahu123.github.io/MCP--Project_Stargazing_AI_Guide/" > https://ujwalsahu123.github.io/MCP--Project_Stargazing_AI_Guide/ </a>
+<a href = "https://star-guide-mcp.streamlit.app/" > APP1 </a>
+
+
+<a href = "https://ujwalsahu123.github.io/MCP--Project_Stargazing_AI_Guide/" > APP2 </a>
 
 Note -> It takes a few Minutes to Run at the First Start (due to starting the Backend, MCP server)
 
+<img src="backend/image.png" alt="StarGuide UI" width="600"/>
+<img src="images/image5.png" alt="StarGuide UI" width="600"/>
+<img src="images/image6.png" alt="StarGuide UI" width="600"/>
+<img src="images/image7.png" alt="StarGuide UI" width="600"/>
 <img src="images/image1.png" alt="StarGuide UI" width="600"/>
 <img src="images/image2.png" alt="StarGuide UI" width="600"/>
 <img src="images/image3.png" alt="StarGuide UI" width="600"/>
